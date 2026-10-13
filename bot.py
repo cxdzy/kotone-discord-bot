@@ -3400,7 +3400,14 @@ async def on_message(message):
         
         await message.reply("Hi!")
         await message.channel.send("https://tenor.com/view/triples-kotone-kpop-s11-kamimoto-kotone-gif-1824783912790233912")
-    
+
+    if any(greeting in message_words for greeting in ('hello', 'hi', 'hey')) and \
+       "jiwoo" in message_words:
+
+        await message.reply("Hi!")
+        # TODO: replace with a Jiwoo GIF link
+        await message.channel.send("https://klipy.com/gifs/lee-jiwoo-jiwoo-triples")
+
     # Process commands after checking for greetings
     await bot.process_commands(message)
 
