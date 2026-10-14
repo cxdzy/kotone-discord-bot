@@ -21,7 +21,19 @@ load_dotenv()
 # Bot setup
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix='k!', intents=intents)
+
+def get_command_prefix(_bot, message):
+    prefix = message.content[:2]
+    if prefix.casefold() == "k!":
+        return prefix
+    return "k!"
+
+
+bot = commands.Bot(
+    command_prefix=get_command_prefix,
+    case_insensitive=True,
+    intents=intents,
+)
 
 # Remove the default help command so we can define our own
 bot.remove_command('help')
@@ -1256,15 +1268,18 @@ async def create_collection_embed_image(era, rarity, owned_member_codes, page=0)
         page,
     )
 
-def create_drop_embed(title, description, cards):
+def create_drop_embed(title, description, cards, show_full_name=False):
     embed = discord.Embed(title=title, description=description, color=0xff6b8b)
     for index, card in enumerate(cards, 1):
         era_name = ERAS[card["era"]]["name"]
+        member_name = (
+            card["full_name"] if show_full_name else card["name"]
+        )
         embed.add_field(
             name=f"Card {index}",
             value=(
                 f"Rarity: {card['rarity']}\n"
-                f"Member: {card['full_name']}\n"
+                f"Member: {member_name}\n"
                 f"Era: {era_name}"
             ),
             inline=True,
@@ -1405,6 +1420,7 @@ class ClaimButton(Button):
                             f"{interaction.user.mention} claimed **{rarity} "
                             f"{claimed_card['name']}** ({self.card_serial}).",
                             [claimed_card],
+                            show_full_name=True,
                         )
                         claimed_embed.set_image(url=get_card_image(era, member_code, rarity))
                         await interaction.followup.send(
@@ -2316,6 +2332,7 @@ class MergeConfirmationView(View):
                 f"({merged_card['serial']})."
             ),
             [merged_card],
+            show_full_name=True,
         )
         result_embed.set_image(
             url=get_card_image(era, member_code, rarity)
@@ -4095,13 +4112,25 @@ async def on_message(message):
             allowed_mentions=discord.AllowedMentions.none(),
         )
     
-    # Check for greetings mentioning Kotone
-    content_lower = message.content.lower()
-    message_words = set(re.findall(r"[a-z0-9]+", content_lower))
-    mentions_kotone = any(name in message_words for name in ("kotone", "tone"))
-    says_goodnight = "goodnight" in message_words or "night" in message_words
+    # Only respond to direct greeting messages, not commands or quoted examples.
+    greeting = message.content.strip()
+    kotone_greeting = re.fullmatch(
+        r"(?:hi|hello|hey)\s+(?:kotone|tone)[.!?]*",
+        greeting,
+        re.IGNORECASE,
+    )
+    kotone_goodnight = re.fullmatch(
+        r"(?:good\s*night|night)\s+(?:kotone|tone)[.!?]*",
+        greeting,
+        re.IGNORECASE,
+    )
+    jiwoo_greeting = re.fullmatch(
+        r"(?:hi|hello|hey)\s+jiwoo[.!?]*",
+        greeting,
+        re.IGNORECASE,
+    )
 
-    if says_goodnight and mentions_kotone:
+    if kotone_goodnight:
         await message.reply("Good night! 💤")
         await message.channel.send(
             "https://cdn.discordapp.com/attachments/"
@@ -4109,15 +4138,11 @@ async def on_message(message):
             "SaveClip.App_723406788_18056502230752032_4643667593876559471_n.jpg"
         )
 
-    if any(greeting in content_lower for greeting in ['hello', 'hi', 'hey']) and \
-       any(name in content_lower for name in ['kotone', 'tone']):
-        
+    elif kotone_greeting:
         await message.reply("Hi!")
         await message.channel.send("https://tenor.com/view/triples-kotone-kpop-s11-kamimoto-kotone-gif-1824783912790233912")
 
-    if any(greeting in message_words for greeting in ('hello', 'hi', 'hey')) and \
-       "jiwoo" in message_words:
-
+    if jiwoo_greeting:
         await message.reply("Hi!")
         # TODO: replace with a Jiwoo GIF link
         await message.channel.send("https://klipy.com/gifs/lee-jiwoo-jiwoo-triples")
