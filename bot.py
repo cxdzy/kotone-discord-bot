@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import random
 import sqlite3
 import datetime
@@ -7,6 +7,7 @@ import asyncio
 import time
 import os
 import re
+import ctypes
 from io import BytesIO
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -37,7 +38,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/atom01-hyerin-118a-1782341464062.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/atom01-hyerin-117a-1782342024353.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/atom01-hyerin-219z-1782343785301.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-hyerin-402z-1782339683194.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-hyerin-402z-1782339683194.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "KYY": {
@@ -47,7 +49,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/atom01-yooyeon-119a-1782342128777.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/atom01-yooyeon-120a-1782340883272.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/atom01-yooyeon-218z-1782344300718.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-yooyeon-402z-1782343607356.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-yooyeon-402z-1782343607356.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "KNK": {
@@ -57,7 +60,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/atom01-nakyoung-119a-1782343380082.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/atom01-nakyoung-117a-1782343380083.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/atom01-nakyoung-216z-1782340366108.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-nakyoung-402z-1782340422614.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-nakyoung-402z-1782340422614.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "GYB": {
@@ -67,7 +71,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/atom01-yubin-117a-1782342429572.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/atom01-yubin-118a-1782339636430.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/atom01-yubin-217z-1782345000648.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-yubin-402z-1782340307577.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-yubin-402z-1782340307577.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             }
         }
@@ -82,7 +87,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-seoyeon-108z-1782344857688.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-seoyeon-313z-1782340962654.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-seoyeon-202z-1782344513651.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-seoyeon-402z-1782342601718.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-seoyeon-402z-1782342601718.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "JHR": {
@@ -92,7 +98,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-hyerin-106z-1782339886639.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-hyerin-301z-1782339829211.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-hyerin-202z-1782344549210.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/divine01-hyerin-401a-1782343961924.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/divine01-hyerin-401a-1782343961924.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "LJW": {
@@ -102,7 +109,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-jiwoo-105a-1782341318096.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-jiwoo-305z-1782340536939.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-jiwoo-208a-1782339895359.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-jiwoo-402z-1782343067344.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-jiwoo-402z-1782343067344.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "KCY": {
@@ -112,7 +120,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-107z-1782342745204.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-305z-1782344865148.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-202z-1782343768187.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-chaeyeon-402z-1782343868867.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-chaeyeon-402z-1782343868867.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "KYY": {
@@ -122,7 +131,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-yooyeon-102z-1782343175557.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-yooyeon-303z-1782341626035.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-yooyeon-202z-1782342170245.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-yooyeon-402z-1782344712343.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-yooyeon-402z-1782344712343.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "KSM": {
@@ -132,7 +142,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-soomin-108a-1782342418981.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-soomin-303z-1782342106452.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-soomin-208a-1782344993571.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-soomin-402z-1782339995617.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-soomin-402z-1782339995617.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "KNK": {
@@ -142,7 +153,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-nakyoung-106z-1782341561799.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-nakyoung-302z-1782341859551.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-nakyoung-201z-1782343906331.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-nakyoung-402z-1782340614290.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-nakyoung-402z-1782340614290.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "GYB": {
@@ -152,7 +164,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-yubin-106z-1782343427617.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-yubin-302z-1782341541747.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-yubin-208a-1782344214005.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-yubin-402z-1782344112134.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-yubin-402z-1782344112134.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "KAE": {
@@ -162,7 +175,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-kaede-108z-1782344646240.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-kaede-301z-1782340993833.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-kaede-207a-1782340565556.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-kaede-402z-1782343301941.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-kaede-402z-1782343301941.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "SDH": {
@@ -172,7 +186,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-dahyun-104z-1782341722068.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-dahyun-302z-1782341712869.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-dahyun-201z-1782339676521.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-dahyun-402z-1782342791953.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-dahyun-402z-1782342791953.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             }
         }
@@ -187,7 +202,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-seoyeon-326z-1782343585590.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-seoyeon-325z-1782340561853.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-seoyeon-211a-1782344947239.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-seoyeon-402z-1782342482866.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-seoyeon-402z-1782342482866.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "LJW": {
@@ -197,7 +213,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-jiwoo-323z-1782342139066.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-jiwoo-319z-1782343394143.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-jiwoo-212a-1782342913644.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/cream02-jiwoo-402z-1782339924657.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/cream02-jiwoo-402z-1782339924657.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "KCY": {
@@ -207,7 +224,8 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-324z-1782341561799.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-320z-1782339457965.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-211a-1782339389690.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-chaeyeon-402z-1782344412320.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-chaeyeon-402z-1782344412320.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 }
             },
             "KSM": {
@@ -217,7 +235,277 @@ ERAS = {
                     "Common": "https://media.objekt.top/collection-images/front/binary01-soomin-324z-1782340706008.webp",
                     "Rare": "https://media.objekt.top/collection-images/front/binary01-soomin-319z-1782340812953.webp",
                     "Epic": "https://media.objekt.top/collection-images/front/binary01-soomin-213a-1782343683921.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-soomin-402z-1782344378764.webp"
+                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-soomin-402z-1782344378764.webp",
+                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
+                }
+            }
+        }
+    },
+    "ASSEMBLE24": {
+        "name": "ASSEMBLE24",
+        "members": {
+            "YSY": {
+                "name": "Seoyeon",
+                "full_name": "Yoon Seoyeon",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "JHR": {
+                "name": "Hyerin",
+                "full_name": "Jeong Hyerin",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "LJW": {
+                "name": "Jiwoo",
+                "full_name": "Lee Jiwoo",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "KCY": {
+                "name": "Chaeyeon",
+                "full_name": "Kim Chaeyeon",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "KYY": {
+                "name": "Yooyeon",
+                "full_name": "Kim Yooyeon",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "KSM": {
+                "name": "Soomin",
+                "full_name": "Kim Soomin",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "KNK": {
+                "name": "Nakyoung",
+                "full_name": "Kim Nakyoung",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "GYB": {
+                "name": "Yubin",
+                "full_name": "Gong Yubin",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "KAE": {
+                "name": "Kaede",
+                "full_name": "Yamada Kaede",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "SDH": {
+                "name": "Dahyun",
+                "full_name": "Seo Dahyun",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "KTN": {
+                "name": "Kotone",
+                "full_name": "Kamimoto Kotone",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "KYJ": {
+                "name": "Yeonji",
+                "full_name": "Kwak Yeonji",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "HST": {
+                "name": "Nien",
+                "full_name": "Hsu Nien Tzu",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "PSH": {
+                "name": "Sohyun",
+                "full_name": "Park Sohyun",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "ZXY": {
+                "name": "Xinyu",
+                "full_name": "Zhou Xinyu",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "KMY": {
+                "name": "Mayu",
+                "full_name": "Koma Mayu",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "LYN": {
+                "name": "Lynn",
+                "full_name": "Kawakami Lynn",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "JBN": {
+                "name": "Joobin",
+                "full_name": "Joo Bin",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "JHY": {
+                "name": "Hayeon",
+                "full_name": "Jeong Hayeon",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "SHI": {
+                "name": "Shion",
+                "full_name": "Park Shion",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "KCW": {
+                "name": "Chaewon",
+                "full_name": "Kim Chaewon",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "SUL": {
+                "name": "Sullin",
+                "full_name": "Pirada Bunraksa",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "SEO": {
+                "name": "Seoah",
+                "full_name": "Jeong Haerin",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
+                }
+            },
+            "JSH": {
+                "name": "Jiyeon",
+                "full_name": "Ji Suhyeon",
+                "images": {
+                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
+                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
                 }
             }
         }
@@ -225,10 +513,11 @@ ERAS = {
 }
 
 RARITIES = {
-    "Common": 6900,
-    "Rare": 3050,
-    "Epic": 40,
+    "Common": 100000,
+    "Rare": 44203,
+    "Epic": 580,
     "Legendary": 10,
+    "Mythic": 1,
 }
 
 S_ORDER = (
@@ -305,6 +594,18 @@ def init_db():
                       cooldown_type TEXT,
                       expires_at REAL,
                       PRIMARY KEY(user_id, cooldown_type))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS cooldown_reminders
+                     (user_id INTEGER NOT NULL,
+                      cooldown_type TEXT NOT NULL,
+                      enabled INTEGER NOT NULL DEFAULT 0,
+                      expires_at REAL,
+                      PRIMARY KEY(user_id, cooldown_type))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS guild_afk
+                     (guild_id INTEGER NOT NULL,
+                      user_id INTEGER NOT NULL,
+                      reason TEXT NOT NULL,
+                      since REAL NOT NULL,
+                      PRIMARY KEY(guild_id, user_id))''')
         c.execute('''CREATE TABLE IF NOT EXISTS user_drop_boosters
                      (user_id INTEGER PRIMARY KEY,
                       expires_at REAL NOT NULL,
@@ -368,6 +669,71 @@ def init_db():
 init_db()
 
 # Cooldown management functions
+COOLDOWN_REMINDER_TYPES = {
+    "daily": ("Daily", "k!daily"),
+    "weekly": ("Weekly", "k!weekly"),
+    "drop": ("Drop", "k!drop"),
+    "claim": ("Claim", None),
+}
+
+def schedule_cooldown_reminder(cursor, user_id, cooldown_type, expires_at):
+    cursor.execute(
+        '''UPDATE cooldown_reminders SET expires_at=?
+           WHERE user_id=? AND cooldown_type=? AND enabled=1''',
+        (expires_at, user_id, cooldown_type),
+    )
+
+@tasks.loop(seconds=30)
+async def cooldown_reminder_loop():
+    now = time.time()
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT user_id, cooldown_type, expires_at
+                   FROM cooldown_reminders
+                   WHERE enabled=1 AND expires_at IS NOT NULL AND expires_at<=?''',
+                (now,),
+            )
+            due_reminders = cursor.fetchall()
+    except sqlite3.Error as error:
+        print(f"Database error while checking cooldown reminders: {error}")
+        return
+
+    for user_id, cooldown_type, expires_at in due_reminders:
+        cooldown_label, command_hint = COOLDOWN_REMINDER_TYPES.get(
+            cooldown_type,
+            (cooldown_type.replace("_", " ").title(), cooldown_type),
+        )
+        try:
+            user = bot.get_user(user_id) or await bot.fetch_user(user_id)
+            reminder_message = f"Your **{cooldown_label}** cooldown has reset."
+            if command_hint:
+                reminder_message += f" You can use `{command_hint}` again."
+            else:
+                reminder_message += " You can claim a card again."
+            await user.send(
+                reminder_message
+            )
+        except discord.HTTPException as error:
+            print(
+                f"Could not send {cooldown_type} cooldown reminder "
+                f"to user {user_id}: {error}"
+            )
+
+        try:
+            with get_db() as conn:
+                conn.execute(
+                    '''UPDATE cooldown_reminders SET expires_at=NULL
+                       WHERE user_id=? AND cooldown_type=? AND expires_at=?''',
+                    (user_id, cooldown_type, expires_at),
+                )
+        except sqlite3.Error as error:
+            print(
+                f"Database error while clearing {cooldown_type} cooldown "
+                f"reminder for user {user_id}: {error}"
+            )
+
 def check_cooldown(user_id: int, cooldown_type: str, duration: int) -> tuple[bool, int]:
     """
     Check if user is on cooldown.
@@ -410,6 +776,12 @@ def set_cooldown(user_id: int, cooldown_type: str, duration: int):
                      (user_id, cooldown_type, expires_at) 
                      VALUES (?, ?, ?)''',
                   (user_id, cooldown_type, expires_at))
+        schedule_cooldown_reminder(
+            c,
+            user_id,
+            cooldown_type,
+            expires_at,
+        )
 
 DROP_BOOSTER_DURATION = 3600
 DROP_BOOSTER_RARITY_MULTIPLIER = 1.5
@@ -417,7 +789,7 @@ SHOP_ITEMS = {
     "drop_booster": {
         "name": "Drop Luck Booster",
         "price": 600,
-        "description": "Boosts Rare, Epic, and Legendary drop weights for 1 hour.",
+        "description": "Boosts Rare, Epic, Legendary, and Mythic drop weights for 1 hour.",
     },
     "drop_reset": {
         "name": "Drop Cooldown Reset",
@@ -512,6 +884,12 @@ def use_shop_item(user_id, item_key):
             c.execute(
                 "DELETE FROM cooldowns WHERE user_id=? AND cooldown_type=?",
                 (user_id, cooldown_type),
+            )
+            schedule_cooldown_reminder(
+                c,
+                user_id,
+                cooldown_type,
+                now,
             )
             confirmation = f"Used a **{item['name']}** and reset your drop cooldown"
         elif item_key == "drop_booster":
@@ -657,15 +1035,30 @@ def generate_card(
             ]
             if target_indices:
                 target_probability = sum(weights[index] for index in target_indices)
-                boosted_probability = min(target_probability + 0.01, 1.0)
-                other_indices = [
-                    index for index in range(len(weights))
-                    if index not in target_indices
-                ]
-                other_probability = 1 - target_probability
+                if target.get("rarity") == "Mythic":
+                    # A Mythic target must not increase the overall Mythic drop rate.
+                    other_indices = [
+                        index for index, candidate in enumerate(candidates)
+                        if candidate[0] == "Mythic" and index not in target_indices
+                    ]
+                    other_probability = sum(weights[index] for index in other_indices)
+                    rarity_probability = target_probability + other_probability
+                    boosted_probability = min(
+                        target_probability + rarity_probability * 0.01,
+                        rarity_probability,
+                    )
+                    remaining_probability = rarity_probability - boosted_probability
+                else:
+                    boosted_probability = min(target_probability + 0.01, 1.0)
+                    other_indices = [
+                        index for index in range(len(weights))
+                        if index not in target_indices
+                    ]
+                    other_probability = 1 - target_probability
+                    remaining_probability = 1 - boosted_probability
                 target_scale = boosted_probability / target_probability
                 other_scale = (
-                    (1 - boosted_probability) / other_probability
+                    remaining_probability / other_probability
                     if other_probability else 0
                 )
                 for index in target_indices:
@@ -735,7 +1128,10 @@ def generate_unique_cards(count=3, target=None, rarity_boost=False):
 # Get image URL for a card
 def get_card_image(era, member_code, rarity):
     try:
-        return ERAS[era]["members"][member_code]["images"][rarity]
+        images = ERAS[era]["members"][member_code]["images"]
+        if rarity == "Mythic" and rarity not in images:
+            return images["Legendary"]
+        return images[rarity]
     except KeyError:
         return "https://example.com/default_card.jpg"
 
@@ -787,14 +1183,18 @@ async def create_drop_embed_image(cards):
     return await asyncio.to_thread(create_card_image_file, cards)
 
 COLLECTION_IMAGE_FILENAME = "collection.jpg"
+COLLECTION_MEMBERS_PER_PAGE = 12
 
-def create_collection_image_file(era, rarity, owned_member_codes):
+def create_collection_image_file(era, rarity, owned_member_codes, page=0):
     """Create a rarity-specific era collection collage with missing cards dimmed."""
     members = list(ERAS[era]["members"].items())
+    if era == "ASSEMBLE24":
+        start = page * COLLECTION_MEMBERS_PER_PAGE
+        members = members[start:start + COLLECTION_MEMBERS_PER_PAGE]
     card_width, card_height = 170, 238
     label_height = 34
     gap = 10
-    columns = min(5, len(members))
+    columns = min(6 if era == "ASSEMBLE24" else 5, len(members))
     rows = (len(members) + columns - 1) // columns
     canvas_width = columns * card_width + (columns - 1) * gap
     canvas_height = rows * (card_height + label_height) + (rows - 1) * gap
@@ -847,12 +1247,13 @@ def create_collection_image_file(era, rarity, owned_member_codes):
     image_buffer.seek(0)
     return discord.File(image_buffer, filename=COLLECTION_IMAGE_FILENAME)
 
-async def create_collection_embed_image(era, rarity, owned_member_codes):
+async def create_collection_embed_image(era, rarity, owned_member_codes, page=0):
     return await asyncio.to_thread(
         create_collection_image_file,
         era,
         rarity,
         owned_member_codes,
+        page,
     )
 
 def create_drop_embed(title, description, cards):
@@ -1126,6 +1527,8 @@ class InventoryView(View):
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guilds')
+    if not cooldown_reminder_loop.is_running():
+        cooldown_reminder_loop.start()
 
 @bot.command(name='8ball')
 async def eight_ball(ctx, *, question):
@@ -1280,6 +1683,12 @@ async def daily(ctx):
                              (user_id, cooldown_type, expires_at) 
                              VALUES (?, ?, ?)''',
                           (user_id, 'daily', expires_at))
+                schedule_cooldown_reminder(
+                    c,
+                    user_id,
+                    'daily',
+                    expires_at,
+                )
 
                 # Commit everything
                 conn.commit()
@@ -1344,7 +1753,7 @@ async def shop(ctx, *, query: str = ""):
         embed.add_field(
             name="🍀 Drop Luck Booster — 600 COMO",
             value=(
-                "Boosts Rare, Epic, and Legendary drop weights for 1 hour when used. "
+                "Boosts Rare, Epic, Legendary, and Mythic drop weights for 1 hour when used. "
                 "Using another while active extends its duration.\n"
                 "`k!shop buy booster`"
             ),
@@ -1610,10 +2019,17 @@ async def drop(ctx):
                             (serial, member_code, era, rarity, owner_id, obtained_at) 
                             VALUES (?, ?, ?, ?, NULL, NULL)''',
                           (card['serial'], card['member_code'], card['era'], card['rarity']))
+            drop_expires_at = now + 600
             c.execute(
                 '''INSERT OR REPLACE INTO cooldowns
                    (user_id, cooldown_type, expires_at) VALUES (?, 'drop', ?)''',
-                (user_id, now + 600),
+                (user_id, drop_expires_at),
+            )
+            schedule_cooldown_reminder(
+                c,
+                user_id,
+                'drop',
+                drop_expires_at,
             )
         cards = cards_to_drop
         
@@ -1773,7 +2189,9 @@ def get_merge_selection(cursor, user_id, serials):
     if any(card[3] != selected_rarity for card in selected_cards):
         raise ValueError(f"All {required_count} cards must have the same rarity.")
     if selected_rarity not in MERGE_UPGRADES:
-        raise ValueError("Legendary cards cannot be merged into a higher rarity.")
+        raise ValueError(
+            f"{selected_rarity} cards cannot be merged into a higher rarity."
+        )
 
     cursor.execute(
         f'''SELECT card_serial FROM market_listings
@@ -1979,6 +2397,14 @@ ERA_ALIASES = {
         "ASSEMBLE",
         "RISING",
     ),
+    "ASSEMBLE24": (
+        "ASSEMBLE24",
+        "ASSEMBLE 24",
+        "GND",
+        "Girls Never Die",
+        "S1-S24",
+        "S1 to S24",
+    ),
     "AAA": (
         "AAA",
         "Generation",
@@ -2000,7 +2426,15 @@ ERA_ALIAS_LOOKUP = {
     for alias in aliases
 }
 
-def create_collection_embed(user, era, rarity, owned_count, total_count):
+def create_collection_embed(
+    user,
+    era,
+    rarity,
+    owned_count,
+    total_count,
+    page=1,
+    total_pages=1,
+):
     embed = discord.Embed(
         description=(
             f"**{user.name}'s {ERAS[era]['name']} ({rarity}) Collection**"
@@ -2011,8 +2445,13 @@ def create_collection_embed(user, era, rarity, owned_count, total_count):
         name="Collection",
         icon_url=user.display_avatar.url,
     )
+    page_status = (
+        f"Page {page}/{total_pages} • "
+        if total_pages > 1
+        else ""
+    )
     embed.description = (
-        f"{owned_count}/{total_count} Cards\n\n"
+        f"{page_status}{owned_count}/{total_count} Cards\n\n"
         f"**{user.name}'s {ERAS[era]['name']} ({rarity}) Collection:**"
     )
     if owned_count == total_count:
@@ -2041,6 +2480,23 @@ class CollectionRarityButton(Button):
     async def callback(self, interaction):
         await self.view.show_rarity(interaction, self.rarity)
 
+
+class CollectionPageButton(Button):
+    def __init__(self, label, page_delta):
+        super().__init__(
+            label=label,
+            style=discord.ButtonStyle.primary,
+            row=1,
+        )
+        self.page_delta = page_delta
+
+    async def callback(self, interaction):
+        await self.view.show_page(
+            interaction,
+            self.view.current_page + self.page_delta,
+        )
+
+
 class CollectionView(View):
     def __init__(self, user, era, owned_by_rarity, default_rarity):
         super().__init__(timeout=180)
@@ -2049,6 +2505,16 @@ class CollectionView(View):
         self.owned_by_rarity = owned_by_rarity
         self.message = None
         self.selected_rarity = default_rarity
+        self.current_page = 0
+        self.total_pages = (
+            (
+                len(ERAS[era]["members"])
+                + COLLECTION_MEMBERS_PER_PAGE
+                - 1
+            ) // COLLECTION_MEMBERS_PER_PAGE
+            if era == "ASSEMBLE24"
+            else 1
+        )
         self.update_buttons()
 
     def update_buttons(self):
@@ -2060,6 +2526,14 @@ class CollectionView(View):
                     selected=rarity == self.selected_rarity,
                 )
             )
+        if self.total_pages > 1:
+            previous_button = CollectionPageButton("◀ Previous", -1)
+            previous_button.disabled = self.current_page == 0
+            self.add_item(previous_button)
+
+            next_button = CollectionPageButton("Next ▶", 1)
+            next_button.disabled = self.current_page >= self.total_pages - 1
+            self.add_item(next_button)
 
     async def interaction_check(self, interaction):
         if interaction.user.id != self.user.id:
@@ -2077,22 +2551,35 @@ class CollectionView(View):
             await self.message.edit(view=self)
 
     async def show_rarity(self, interaction, rarity):
+        self.selected_rarity = rarity
+        await self.update_collection(interaction)
+
+    async def show_page(self, interaction, page):
+        if not 0 <= page < self.total_pages:
+            await interaction.response.defer()
+            return
+        self.current_page = page
+        await self.update_collection(interaction)
+
+    async def update_collection(self, interaction):
         await interaction.response.defer()
         try:
-            owned_codes = self.owned_by_rarity[rarity]
+            owned_codes = self.owned_by_rarity[self.selected_rarity]
             image = await create_collection_embed_image(
                 self.era,
-                rarity,
+                self.selected_rarity,
                 owned_codes,
+                self.current_page,
             )
             embed = create_collection_embed(
                 self.user,
                 self.era,
-                rarity,
+                self.selected_rarity,
                 len(owned_codes),
                 len(ERAS[self.era]["members"]),
+                self.current_page + 1,
+                self.total_pages,
             )
-            self.selected_rarity = rarity
             self.update_buttons()
             await interaction.edit_original_response(
                 embed=embed,
@@ -2166,6 +2653,8 @@ async def collection(ctx, *, query: str = ""):
             rarity,
             len(owned_by_rarity[rarity]),
             len(ERAS[era]["members"]),
+            1,
+            view.total_pages,
         )
         image = await create_collection_embed_image(
             era,
@@ -2349,7 +2838,8 @@ async def view_card(ctx, serial: str):
             "Common": 0x808080,     # Gray
             "Rare": 0x0070FF,       # Blue
             "Epic": 0x800080,       # Purple
-            "Legendary": 0xFFD700   # Gold
+            "Legendary": 0xFFD700,  # Gold
+            "Mythic": 0xFF4FD8      # Pink
         }
         embed.color = rarity_colors.get(rarity, 0xff6b8b)
         
@@ -2770,8 +3260,8 @@ async def stats(ctx, user: discord.Member = None):
         
         # Rarity breakdown
         rarity_text = "\n".join([
-            f"{rarity}: {rarity_counts.get(rarity, 0)}" 
-            for rarity in ["Common", "Rare", "Epic", "Legendary"]
+            f"{rarity}: {rarity_counts.get(rarity, 0)}"
+            for rarity in RARITIES
         ])
         embed.add_field(
             name="📈 Rarity Breakdown", 
@@ -2862,6 +3352,104 @@ async def cooldown(ctx):
         print(f"Error in cooldown command: {e}")
         await ctx.reply("An error occurred while checking your cooldowns.")
 
+@bot.command(name='remind', aliases=['reminder', 'reminders'])
+async def cooldown_reminders(ctx, *, options: str = ""):
+    """Choose which cooldown resets should be sent to you by DM."""
+    parts = options.casefold().split()
+    if parts:
+        if parts[0] != "all" and parts[0] not in COOLDOWN_REMINDER_TYPES:
+            await ctx.reply(
+                "Choose `daily`, `weekly`, `drop`, `claim`, or `all`."
+            )
+            return
+        if len(parts) > 2 or (len(parts) == 2 and parts[1] not in {"on", "off"}):
+            await ctx.reply(
+                "Use `k!remind <daily|weekly|drop|claim|all> [on|off]`."
+            )
+            return
+    now = time.time()
+
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.executemany(
+                '''INSERT OR IGNORE INTO cooldown_reminders
+                   (user_id, cooldown_type, enabled, expires_at)
+                   VALUES (?, ?, 0, NULL)''',
+                (
+                    (ctx.author.id, cooldown_type)
+                    for cooldown_type in COOLDOWN_REMINDER_TYPES
+                ),
+            )
+
+            if parts:
+                cooldown_type = parts[0]
+                if cooldown_type == "all":
+                    selected_types = list(COOLDOWN_REMINDER_TYPES)
+                else:
+                    selected_types = [cooldown_type]
+
+                enabled = len(parts) == 1 or parts[1] == "on"
+                for selected_type in selected_types:
+                    expires_at = None
+                    if enabled:
+                        cursor.execute(
+                            '''SELECT expires_at FROM cooldowns
+                               WHERE user_id=? AND cooldown_type=? AND expires_at>?''',
+                            (ctx.author.id, selected_type, now),
+                        )
+                        active_cooldown = cursor.fetchone()
+                        if active_cooldown:
+                            expires_at = active_cooldown[0]
+                    cursor.execute(
+                        '''UPDATE cooldown_reminders
+                           SET enabled=?, expires_at=?
+                           WHERE user_id=? AND cooldown_type=?''',
+                        (
+                            int(enabled),
+                            expires_at,
+                            ctx.author.id,
+                            selected_type,
+                        ),
+                    )
+
+            cursor.execute(
+                '''SELECT cooldown_type, enabled FROM cooldown_reminders
+                   WHERE user_id=?''',
+                (ctx.author.id,),
+            )
+            settings = dict(cursor.fetchall())
+    except sqlite3.Error as error:
+        print(f"Database error while updating cooldown reminders: {error}")
+        await ctx.reply("Your reminder settings couldn't be saved due to a database error.")
+        return
+
+    settings_text = "\n".join(
+        f"**{label}:** {'On' if settings.get(cooldown_type, 0) else 'Off'}"
+        for cooldown_type, (label, _) in COOLDOWN_REMINDER_TYPES.items()
+    )
+    if parts:
+        changed_types = (
+            list(COOLDOWN_REMINDER_TYPES)
+            if parts[0] == "all"
+            else [parts[0]]
+        )
+        state = "enabled" if len(parts) == 1 or parts[1] == "on" else "disabled"
+        changed_labels = ", ".join(
+            COOLDOWN_REMINDER_TYPES[cooldown_type][0]
+            for cooldown_type in changed_types
+        )
+        await ctx.reply(
+            f"{changed_labels} cooldown reminders {state}.\n\n{settings_text}"
+        )
+    else:
+        await ctx.reply(
+            "Cooldown reminder settings (sent by DM):\n"
+            f"{settings_text}\n\n"
+            "Use `k!remind daily` to enable one, "
+            "`k!remind drop off` to disable one, or `k!remind all on/off`."
+        )
+
 @bot.command(name='help')
 async def help_command(ctx):
     """Display help information about bot commands."""
@@ -2877,6 +3465,7 @@ async def help_command(ctx):
             "`k!daily` - Claim daily COMO (streak bonuses!)\n"
             "`k!weekly` - Claim weekly COMO and a random card\n"
             "`k!cooldown` or `k!cd` - Check your active cooldowns\n"
+            "`k!remind` or `k!reminder` - Choose cooldown reset DM reminders\n"
             "`k!balance` or `k!como` - Check your COMO balance\n"
             "`k!shop` - View items; `k!shop buy <item>` - Buy an item\n"
             "`k!items` - View your items; `k!use <item>` - Use an item from your inventory\n"
@@ -2918,6 +3507,7 @@ async def help_command(ctx):
     embed.add_field(
         name="🎮 Fun",
         value=(
+            "`k!afk [reason]` - Set your AFK status; it clears when you speak again\n"
             "`k!minigame` - View minigames; `k!minigame play <number>` - Select a minigame\n"
             "`k!8ball <question>` - Ask the magic 8-ball\n"
             "`k!choose <option> or <option>` - Choose between options\n"
@@ -2938,6 +3528,54 @@ async def help_command(ctx):
     )
     
     await ctx.reply(embed=embed)
+
+def format_afk_duration(elapsed_seconds):
+    units = (
+        (365 * 86400, "year"),
+        (30 * 86400, "month"),
+        (7 * 86400, "week"),
+        (86400, "day"),
+        (3600, "hour"),
+        (60, "minute"),
+        (1, "second"),
+    )
+    elapsed_seconds = max(1, int(elapsed_seconds))
+    for unit_seconds, unit_name in units:
+        if elapsed_seconds >= unit_seconds:
+            count = elapsed_seconds // unit_seconds
+            plural = "" if count == 1 else "s"
+            return f"{count} {unit_name}{plural}"
+    return "1 second"
+
+@bot.command(name='afk')
+async def afk(ctx, *, reason: str = "AFK"):
+    """Set an AFK status that clears when you send another message."""
+    if ctx.guild is None:
+        await ctx.reply("AFK status can only be set in a server.")
+        return
+
+    reason = reason.strip() or "AFK"
+    if len(reason) > 500:
+        await ctx.reply("Your AFK reason must be 500 characters or fewer.")
+        return
+
+    try:
+        with get_db() as conn:
+            conn.execute(
+                '''INSERT OR REPLACE INTO guild_afk
+                   (guild_id, user_id, reason, since)
+                   VALUES (?, ?, ?, ?)''',
+                (ctx.guild.id, ctx.author.id, reason, time.time()),
+            )
+    except sqlite3.Error as error:
+        print(f"Database error while setting AFK status: {error}")
+        await ctx.reply("Your AFK status couldn't be saved due to a database error.")
+        return
+
+    await ctx.reply(
+        f"{ctx.author.display_name} is now AFK: {reason}",
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
 
 @bot.command(name='weekly')
 async def weekly(ctx):
@@ -3005,6 +3643,12 @@ async def weekly(ctx):
             # Set 7-day cooldown
             expires_at = time.time() + 604800
             c.execute("INSERT OR REPLACE INTO cooldowns (user_id, cooldown_type, expires_at) VALUES (?, ?, ?)", (user_id, 'weekly', expires_at))
+            schedule_cooldown_reminder(
+                c,
+                user_id,
+                'weekly',
+                expires_at,
+            )
 
             conn.commit()
 
@@ -3380,6 +4024,76 @@ async def on_message(message):
     # Don't respond to ourselves
     if message.author == bot.user:
         return
+
+    afk_responses = []
+    if message.guild is not None:
+        message_parts = message.content.split(maxsplit=1)
+        is_afk_command = bool(
+            message_parts and message_parts[0].casefold() == "k!afk"
+        )
+        mentioned_users = {
+            user.id: user
+            for user in message.mentions
+            if user.id != message.author.id and not user.bot
+        }
+        try:
+            with get_db() as conn:
+                cursor = conn.cursor()
+                if not is_afk_command:
+                    cursor.execute(
+                        '''SELECT reason FROM guild_afk
+                           WHERE guild_id=? AND user_id=?''',
+                        (message.guild.id, message.author.id),
+                    )
+                    author_afk = cursor.fetchone()
+                    if author_afk:
+                        cursor.execute(
+                            "DELETE FROM guild_afk WHERE guild_id=? AND user_id=?",
+                            (message.guild.id, message.author.id),
+                        )
+                        afk_responses.append(
+                            f"Welcome back, **{message.author.display_name}**! "
+                            "Your AFK status has been removed."
+                        )
+
+                if mentioned_users:
+                    placeholders = ",".join("?" for _ in mentioned_users)
+                    cursor.execute(
+                        f'''SELECT user_id, reason, since FROM guild_afk
+                            WHERE guild_id=? AND user_id IN ({placeholders})''',
+                        (message.guild.id, *mentioned_users),
+                    )
+                    now = time.time()
+                    for user_id, reason, since in cursor.fetchall():
+                        mentioned_user = mentioned_users[user_id]
+                        duration = format_afk_duration(now - since)
+                        visible_reason = reason
+                        if len(visible_reason) > 300:
+                            visible_reason = visible_reason[:297] + "..."
+                        afk_responses.append(
+                            f"**{mentioned_user.display_name}** is AFK: "
+                            f"{visible_reason} — {duration} ago."
+                        )
+        except sqlite3.Error as error:
+            print(f"Database error while checking AFK statuses: {error}")
+            afk_responses.append(
+                "AFK statuses couldn't be checked due to a database error."
+            )
+
+    if afk_responses:
+        response = []
+        response_length = 0
+        for afk_response in afk_responses:
+            if response_length + len(afk_response) + 1 > 1900:
+                response.append("More AFK statuses were omitted.")
+                break
+            response.append(afk_response)
+            response_length += len(afk_response) + 1
+        await message.reply(
+            "\n".join(response),
+            mention_author=False,
+            allowed_mentions=discord.AllowedMentions.none(),
+        )
     
     # Check for greetings mentioning Kotone
     content_lower = message.content.lower()
@@ -3432,9 +4146,37 @@ if __name__ == "__main__":
     if not token:
         raise RuntimeError("DISCORD_TOKEN is not set. Add it to your .env file.")
 
+    instance_mutex = None
+    if os.name == "nt":
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateMutexW.argtypes = (
+            ctypes.c_void_p,
+            ctypes.c_bool,
+            ctypes.c_wchar_p,
+        )
+        kernel32.CreateMutexW.restype = ctypes.c_void_p
+        kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
+        kernel32.CloseHandle.restype = ctypes.c_bool
+        ctypes.set_last_error(0)
+        instance_mutex = kernel32.CreateMutexW(
+            None,
+            False,
+            "Local\\KotoneDiscordBot",
+        )
+        if not instance_mutex:
+            raise ctypes.WinError(ctypes.get_last_error())
+        if ctypes.get_last_error() == 183:
+            kernel32.CloseHandle(instance_mutex)
+            raise RuntimeError(
+                "Another Kotone Discord bot instance is already running."
+            )
+
     try:
         bot.run(token)
     except discord.LoginFailure:
         print("ERROR: Invalid bot token!")
     except Exception as e:
         print(f"ERROR: Failed to start bot: {e}")
+    finally:
+        if instance_mutex:
+            kernel32.CloseHandle(instance_mutex)
