@@ -712,7 +712,10 @@ async def cooldown_reminder_loop():
         print(f"Database error while checking cooldown reminders: {error}")
         return
 
-    for user_id, cooldown_type, expires_at in due_reminders:
+    for index, (user_id, cooldown_type, expires_at) in enumerate(due_reminders):
+        if index:
+            await asyncio.sleep(1)
+
         cooldown_label, command_hint = COOLDOWN_REMINDER_TYPES.get(
             cooldown_type,
             (cooldown_type.replace("_", " ").title(), cooldown_type),
@@ -732,6 +735,21 @@ async def cooldown_reminder_loop():
                 f"Could not send {cooldown_type} cooldown reminder "
                 f"to user {user_id}: {error}"
             )
+            if error.status == 429:
+                try:
+                    with get_db() as conn:
+                        conn.execute(
+                            '''UPDATE cooldown_reminders SET expires_at=?
+                               WHERE user_id=? AND cooldown_type=? AND expires_at=?''',
+                            (time.time() + 60, user_id, cooldown_type, expires_at),
+                        )
+                except sqlite3.Error as database_error:
+                    print(
+                        f"Database error while deferring rate-limited "
+                        f"{cooldown_type} reminder for user {user_id}: "
+                        f"{database_error}"
+                    )
+                return
 
         try:
             with get_db() as conn:
@@ -4200,8 +4218,10 @@ if __name__ == "__main__":
         bot.run(token)
     except discord.LoginFailure:
         print("ERROR: Invalid bot token!")
+        raise
     except Exception as e:
         print(f"ERROR: Failed to start bot: {e}")
+        raise
     finally:
         if instance_mutex:
             kernel32.CloseHandle(instance_mutex)
