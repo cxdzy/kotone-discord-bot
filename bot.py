@@ -1,20 +1,24 @@
 import discord
-from discord.ext import commands, tasks
+from discord import app_commands
+from discord.ext import tasks
 import random
 import sqlite3
 import datetime
 import asyncio
+import inspect
 import time
 import os
 import re
 import ctypes
 from io import BytesIO
+from types import SimpleNamespace
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 from discord.ui import Button, View
 from contextlib import contextmanager
 from PIL import Image, ImageDraw, ImageOps
 from dotenv import load_dotenv
+from eras import ERA_ALIASES, ERA_ALIAS_LOOKUP, ERAS, normalize_era_alias
 
 load_dotenv()
 
@@ -22,507 +26,113 @@ load_dotenv()
 intents = discord.Intents.default()
 intents.message_content = True
 
-def get_command_prefix(_bot, message):
-    prefix = message.content[:2]
-    if prefix.casefold() == "k!":
-        return prefix
-    return "k!"
+
+class KotoneBot(discord.Client):
+    def __init__(self):
+        super().__init__(intents=intents)
+        self.tree = app_commands.CommandTree(self)
+
+    async def setup_hook(self):
+        await self.tree.sync()
+        print(f"Synced {len(self.tree.get_commands())} slash commands")
 
 
-bot = commands.Bot(
-    command_prefix=get_command_prefix,
-    case_insensitive=True,
-    intents=intents,
-)
+bot = KotoneBot()
+SLASH_COMMANDS = {}
+SLASH_COMMAND_ALIASES = {}
 
-# Remove the default help command so we can define our own
-bot.remove_command('help')
 
-# Card data with eras
-ERAS = {
-    "AAA": {
-        "name": "AAA",
-        "members": {
-            "JHR": {
-                "name": "Hyerin", 
-                "full_name": "Jeong Hyerin",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/atom01-hyerin-118a-1782341464062.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/atom01-hyerin-117a-1782342024353.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/atom01-hyerin-219z-1782343785301.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-hyerin-402z-1782339683194.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "KYY": {
-                "name": "Yooyeon", 
-                "full_name": "Kim Yooyeon",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/atom01-yooyeon-119a-1782342128777.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/atom01-yooyeon-120a-1782340883272.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/atom01-yooyeon-218z-1782344300718.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-yooyeon-402z-1782343607356.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "KNK": {
-                "name": "Nakyoung", 
-                "full_name": "Kim Nakyoung",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/atom01-nakyoung-119a-1782343380082.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/atom01-nakyoung-117a-1782343380083.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/atom01-nakyoung-216z-1782340366108.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-nakyoung-402z-1782340422614.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "GYB": {
-                "name": "Yubin", 
-                "full_name": "Gong Yubin",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/atom01-yubin-117a-1782342429572.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/atom01-yubin-118a-1782339636430.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/atom01-yubin-217z-1782345000648.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-yubin-402z-1782340307577.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            }
+class SlashContext:
+    def __init__(self, interaction, invoked_with, members):
+        self.interaction = interaction
+        self.author = interaction.user
+        self.guild = interaction.guild
+        self.channel = interaction.channel
+        self.bot = interaction.client
+        self.invoked_with = invoked_with
+        self.message = SimpleNamespace(mentions=members)
+
+    async def reply(self, content=None, **kwargs):
+        kwargs.pop("mention_author", None)
+        return await self.interaction.followup.send(
+            content=content,
+            wait=True,
+            **kwargs,
+        )
+
+    async def send(self, content=None, **kwargs):
+        return await self.reply(content, **kwargs)
+
+
+def slash_command(name=None, *, aliases=(), group=None):
+    def decorator(callback):
+        callback_signature = inspect.signature(callback)
+        option_parameters = []
+        for parameter in list(callback_signature.parameters.values())[1:]:
+            annotation = parameter.annotation
+            if annotation is inspect.Parameter.empty:
+                annotation = str
+            option_parameters.append(
+                parameter.replace(
+                    kind=inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    annotation=annotation,
+                )
+            )
+
+        async def invoke(interaction, **options):
+            await interaction.response.defer(thinking=True)
+            members = [
+                value
+                for value in options.values()
+                if isinstance(value, discord.Member)
+            ]
+            context = SlashContext(
+                interaction,
+                interaction.data.get("name", command_name),
+                members,
+            )
+            await callback(context, **options)
+
+        command_name = name or callback.__name__
+        command_description = (callback.__doc__ or "Run this command.").strip()
+        command_description = command_description.splitlines()[0][:100]
+        parameters = [
+            inspect.Parameter(
+                "interaction",
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=discord.Interaction,
+            ),
+            *option_parameters,
+        ]
+        invoke.__signature__ = inspect.Signature(parameters)
+        invoke.__annotations__ = {
+            parameter.name: parameter.annotation for parameter in parameters
         }
-    },
-    "ASSEMBLE": {
-        "name": "ASSEMBLE",
-        "members": {
-            "YSY": {
-                "name": "Seoyeon", 
-                "full_name": "Yoon Seoyeon",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-seoyeon-108z-1782344857688.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-seoyeon-313z-1782340962654.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-seoyeon-202z-1782344513651.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-seoyeon-402z-1782342601718.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "JHR": {
-                "name": "Hyerin", 
-                "full_name": "Jeong Hyerin",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-hyerin-106z-1782339886639.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-hyerin-301z-1782339829211.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-hyerin-202z-1782344549210.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/divine01-hyerin-401a-1782343961924.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "LJW": {
-                "name": "Jiwoo", 
-                "full_name": "Lee Jiwoo",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-jiwoo-105a-1782341318096.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-jiwoo-305z-1782340536939.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-jiwoo-208a-1782339895359.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-jiwoo-402z-1782343067344.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "KCY": {
-                "name": "Chaeyeon", 
-                "full_name": "Kim Chaeyeon",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-107z-1782342745204.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-305z-1782344865148.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-202z-1782343768187.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-chaeyeon-402z-1782343868867.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "KYY": {
-                "name": "Yooyeon", 
-                "full_name": "Kim Yooyeon",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-yooyeon-102z-1782343175557.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-yooyeon-303z-1782341626035.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-yooyeon-202z-1782342170245.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-yooyeon-402z-1782344712343.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "KSM": {
-                "name": "Soomin", 
-                "full_name": "Kim Soomin",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-soomin-108a-1782342418981.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-soomin-303z-1782342106452.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-soomin-208a-1782344993571.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-soomin-402z-1782339995617.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "KNK": {
-                "name": "Nakyoung", 
-                "full_name": "Kim Nakyoung",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-nakyoung-106z-1782341561799.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-nakyoung-302z-1782341859551.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-nakyoung-201z-1782343906331.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-nakyoung-402z-1782340614290.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "GYB": {
-                "name": "Yubin", 
-                "full_name": "Gong Yubin",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-yubin-106z-1782343427617.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-yubin-302z-1782341541747.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-yubin-208a-1782344214005.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-yubin-402z-1782344112134.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "KAE": {
-                "name": "Kaede", 
-                "full_name": "Yamada Kaede",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-kaede-108z-1782344646240.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-kaede-301z-1782340993833.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-kaede-207a-1782340565556.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-kaede-402z-1782343301941.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "SDH": {
-                "name": "Dahyun", 
-                "full_name": "Seo Dahyun",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-dahyun-104z-1782341722068.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-dahyun-302z-1782341712869.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-dahyun-201z-1782339676521.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/ever01-dahyun-402z-1782342791953.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            }
-        }
-    },
-    "KRE": {
-        "name": "KRE",
-        "members": {
-            "YSY": {
-                "name": "Seoyeon",
-                "full_name": "Yoon Seoyeon",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-seoyeon-326z-1782343585590.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-seoyeon-325z-1782340561853.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-seoyeon-211a-1782344947239.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-seoyeon-402z-1782342482866.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "LJW": {
-                "name": "Jiwoo",
-                "full_name": "Lee Jiwoo",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-jiwoo-323z-1782342139066.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-jiwoo-319z-1782343394143.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-jiwoo-212a-1782342913644.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/cream02-jiwoo-402z-1782339924657.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "KCY": {
-                "name": "Chaeyeon",
-                "full_name": "Kim Chaeyeon",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-324z-1782341561799.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-320z-1782339457965.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-chaeyeon-211a-1782339389690.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/atom02-chaeyeon-402z-1782344412320.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            },
-            "KSM": {
-                "name": "Soomin",
-                "full_name": "Kim Soomin",
-                "images": {
-                    "Common": "https://media.objekt.top/collection-images/front/binary01-soomin-324z-1782340706008.webp",
-                    "Rare": "https://media.objekt.top/collection-images/front/binary01-soomin-319z-1782340812953.webp",
-                    "Epic": "https://media.objekt.top/collection-images/front/binary01-soomin-213a-1782343683921.webp",
-                    "Legendary": "https://media.objekt.top/collection-images/front/binary02-soomin-402z-1782344378764.webp",
-                    "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
-                }
-            }
-        }
-    },
-    "ASSEMBLE24": {
-        "name": "ASSEMBLE24",
-        "members": {
-            "YSY": {
-                "name": "Seoyeon",
-                "full_name": "Yoon Seoyeon",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "JHR": {
-                "name": "Hyerin",
-                "full_name": "Jeong Hyerin",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "LJW": {
-                "name": "Jiwoo",
-                "full_name": "Lee Jiwoo",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "KCY": {
-                "name": "Chaeyeon",
-                "full_name": "Kim Chaeyeon",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "KYY": {
-                "name": "Yooyeon",
-                "full_name": "Kim Yooyeon",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "KSM": {
-                "name": "Soomin",
-                "full_name": "Kim Soomin",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "KNK": {
-                "name": "Nakyoung",
-                "full_name": "Kim Nakyoung",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "GYB": {
-                "name": "Yubin",
-                "full_name": "Gong Yubin",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "KAE": {
-                "name": "Kaede",
-                "full_name": "Yamada Kaede",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "SDH": {
-                "name": "Dahyun",
-                "full_name": "Seo Dahyun",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "KTN": {
-                "name": "Kotone",
-                "full_name": "Kamimoto Kotone",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "KYJ": {
-                "name": "Yeonji",
-                "full_name": "Kwak Yeonji",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "HST": {
-                "name": "Nien",
-                "full_name": "Hsu Nien Tzu",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "PSH": {
-                "name": "Sohyun",
-                "full_name": "Park Sohyun",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "ZXY": {
-                "name": "Xinyu",
-                "full_name": "Zhou Xinyu",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "KMY": {
-                "name": "Mayu",
-                "full_name": "Koma Mayu",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "LYN": {
-                "name": "Lynn",
-                "full_name": "Kawakami Lynn",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "JBN": {
-                "name": "Joobin",
-                "full_name": "Joo Bin",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "JHY": {
-                "name": "Hayeon",
-                "full_name": "Jeong Hayeon",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "SHI": {
-                "name": "Shion",
-                "full_name": "Park Shion",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "KCW": {
-                "name": "Chaewon",
-                "full_name": "Kim Chaewon",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "SUL": {
-                "name": "Sullin",
-                "full_name": "Pirada Bunraksa",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "SEO": {
-                "name": "Seoah",
-                "full_name": "Jeong Haerin",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            },
-            "JSH": {
-                "name": "Jiyeon",
-                "full_name": "Ji Suhyeon",
-                "images": {
-                    "Common": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Rare": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Epic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Legendary": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&",
-                    "Mythic": "https://cdn.discordapp.com/attachments/1335162578246041680/1559959802896060516/4d9fba29-2611-4e3e-a12a-b38d9d16b12b.png?ex=6ad0f947&is=6acfa7c7&hm=ed65212f4b455c4361159a4a85c2d7e232979e8fae5b20e60de481e407910832&"
-                }
-            }
-        }
-    }
-}
+
+        for registered_name in (command_name, *aliases):
+            SLASH_COMMAND_ALIASES[registered_name] = tuple(
+                alias
+                for alias in (command_name, *aliases)
+                if alias != registered_name
+            )
+            command = app_commands.Command(
+                name=registered_name,
+                description=command_description,
+                callback=invoke,
+            )
+            if group is None:
+                bot.tree.add_command(command)
+            else:
+                group.add_command(command)
+            command_key = (
+                f"{group.name} {registered_name}"
+                if group is not None
+                else registered_name
+            )
+            SLASH_COMMANDS[command_key] = command
+        return callback
+
+    return decorator
 
 RARITIES = {
     "Common": 100000,
@@ -531,6 +141,46 @@ RARITIES = {
     "Legendary": 10,
     "Mythic": 1,
 }
+SPIN_DAILY_LIMIT = 5
+SPIN_REWARD_COUNTS = {
+    "Common": {
+        "Common": 8,
+        "Rare": 4,
+        "Epic": 2,
+        "Legendary": 1,
+        "Mythic": 0,
+    },
+    "Rare": {
+        "Common": 6,
+        "Rare": 4,
+        "Epic": 3,
+        "Legendary": 2,
+        "Mythic": 0,
+    },
+    "Epic": {
+        "Common": 5,
+        "Rare": 4,
+        "Epic": 3,
+        "Legendary": 2,
+        "Mythic": 1,
+    },
+    "Legendary": {
+        "Common": 3,
+        "Rare": 3,
+        "Epic": 4,
+        "Legendary": 3,
+        "Mythic": 2,
+    },
+    "Mythic": {
+        "Common": 2,
+        "Rare": 3,
+        "Epic": 4,
+        "Legendary": 4,
+        "Mythic": 2,
+    },
+}
+SPIN_BOMB_SLOTS = 1
+SPIN_BOARD_SIZE = 16
 
 S_ORDER = (
     "YSY", "JHR", "LJW", "KCY", "KYY", "KSM", "KNK", "GYB", "KAE", "SDH",
@@ -612,6 +262,10 @@ def init_db():
                       enabled INTEGER NOT NULL DEFAULT 0,
                       expires_at REAL,
                       PRIMARY KEY(user_id, cooldown_type))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS spin_usage
+                     (user_id INTEGER PRIMARY KEY,
+                      spin_date TEXT NOT NULL,
+                      spins INTEGER NOT NULL DEFAULT 0)''')
         c.execute('''CREATE TABLE IF NOT EXISTS guild_afk
                      (guild_id INTEGER NOT NULL,
                       user_id INTEGER NOT NULL,
@@ -682,9 +336,10 @@ init_db()
 
 # Cooldown management functions
 COOLDOWN_REMINDER_TYPES = {
-    "daily": ("Daily", "k!daily"),
-    "weekly": ("Weekly", "k!weekly"),
-    "drop": ("Drop", "k!drop"),
+    "daily": ("Daily", "/daily"),
+    "weekly": ("Weekly", "/weekly"),
+    "drop": ("Drop", "/drop"),
+    "spin": ("Spin", "/spin serial"),
     "claim": ("Claim", None),
 }
 
@@ -694,6 +349,17 @@ def schedule_cooldown_reminder(cursor, user_id, cooldown_type, expires_at):
            WHERE user_id=? AND cooldown_type=? AND enabled=1''',
         (expires_at, user_id, cooldown_type),
     )
+
+
+def next_local_midnight_timestamp(day=None):
+    current_day = (
+        datetime.date.fromisoformat(day)
+        if day is not None
+        else datetime.date.today()
+    )
+    tomorrow = current_day + datetime.timedelta(days=1)
+    return datetime.datetime.combine(tomorrow, datetime.time.min).timestamp()
+
 
 @tasks.loop(seconds=30)
 async def cooldown_reminder_loop():
@@ -824,7 +490,7 @@ SHOP_ITEMS = {
     "drop_reset": {
         "name": "Drop Cooldown Reset",
         "price": 200,
-        "description": "Reset your active k!drop cooldown.",
+        "description": "Reset your active /drop cooldown.",
     },
     "merge_discount": {
         "name": "Merge Discount Token",
@@ -839,7 +505,7 @@ SHOP_ITEMS = {
     "extra_drop_slot": {
         "name": "Extra Drop Slot",
         "price": 400,
-        "description": "Use to add one card to your next k!drop.",
+        "description": "Use to add one card to your next /drop.",
     },
 }
 SHOP_ITEM_ALIASES = {
@@ -868,7 +534,7 @@ def purchase_shop_item(user_id, item_key):
         c.execute("SELECT como FROM users WHERE user_id=?", (user_id,))
         user = c.fetchone()
         if user is None:
-            raise ValueError("You don't have a COMO balance yet. Use `k!daily` first.")
+            raise ValueError("You don't have a COMO balance yet. Use `/daily` first.")
         if user[0] < item["price"]:
             raise ValueError(
                 f"You need {item['price']} COMO to buy the {item['name']}."
@@ -899,7 +565,7 @@ def use_shop_item(user_id, item_key):
         )
         inventory_item = c.fetchone()
         if inventory_item is None or inventory_item[0] <= 0:
-            raise ValueError(f"You don't have a **{item['name']}** in `k!items`.")
+            raise ValueError(f"You don't have a **{item['name']}** in `/items`.")
 
         if item_key == "drop_reset":
             cooldown_type = "drop"
@@ -959,7 +625,7 @@ def use_shop_item(user_id, item_key):
                     "your streak after one missed day"
                 ),
                 "extra_drop_slot": (
-                    "Activated an **Extra Drop Slot** for your next `k!drop`"
+                    "Activated an **Extra Drop Slot** for your next `/drop`"
                 ),
             }
             confirmation = confirmations[item_key]
@@ -1221,21 +887,19 @@ def create_collection_image_file(era, rarity, owned_member_codes, page=0):
     if era == "ASSEMBLE24":
         start = page * COLLECTION_MEMBERS_PER_PAGE
         members = members[start:start + COLLECTION_MEMBERS_PER_PAGE]
-    card_width, card_height = 170, 238
-    label_height = 34
+    card_width, card_height = 194, 300
     gap = 10
     columns = min(6 if era == "ASSEMBLE24" else 5, len(members))
     rows = (len(members) + columns - 1) // columns
     canvas_width = columns * card_width + (columns - 1) * gap
-    canvas_height = rows * (card_height + label_height) + (rows - 1) * gap
+    canvas_height = rows * card_height + (rows - 1) * gap
     canvas = Image.new("RGB", (canvas_width, canvas_height), (35, 35, 45))
-    draw = ImageDraw.Draw(canvas)
 
-    for index, (member_code, member_data) in enumerate(members):
+    for index, (member_code, _) in enumerate(members):
         column = index % columns
         row = index // columns
         x = column * (card_width + gap)
-        y = row * (card_height + label_height + gap)
+        y = row * (card_height + gap)
         try:
             request = Request(
                 get_card_image(era, member_code, rarity),
@@ -1246,31 +910,42 @@ def create_collection_image_file(era, rarity, owned_member_codes, page=0):
             if len(image_data) > 10 * 1024 * 1024:
                 raise ValueError("image exceeds the 10 MiB download limit")
             image = Image.open(BytesIO(image_data)).convert("RGB")
-            image = ImageOps.fit(
+            image = ImageOps.contain(
                 image,
                 (card_width, card_height),
                 method=Image.Resampling.LANCZOS,
             )
+            card_image = Image.new(
+                "RGB",
+                (card_width, card_height),
+                (35, 35, 45),
+            )
+            card_image.paste(
+                image,
+                (
+                    (card_width - image.width) // 2,
+                    (card_height - image.height) // 2,
+                ),
+            )
         except (URLError, OSError, ValueError, Image.DecompressionBombError) as error:
             print(f"Could not load collection image for {member_code}: {error}")
-            image = Image.new("RGB", (card_width, card_height), (65, 65, 75))
-            ImageDraw.Draw(image).text(
+            card_image = Image.new(
+                "RGB",
+                (card_width, card_height),
+                (65, 65, 75),
+            )
+            ImageDraw.Draw(card_image).text(
                 (12, card_height // 2),
                 "Image unavailable",
                 fill="white",
             )
 
         if member_code not in owned_member_codes:
-            muted = ImageOps.grayscale(image).convert("RGB")
+            muted = ImageOps.grayscale(card_image).convert("RGB")
             overlay = Image.new("RGB", muted.size, (25, 25, 30))
-            image = Image.blend(muted, overlay, 0.62)
+            card_image = Image.blend(muted, overlay, 0.62)
 
-        canvas.paste(image, (x, y))
-        draw.text(
-            (x + 4, y + card_height + 5),
-            member_data["name"],
-            fill=(245, 245, 250),
-        )
+        canvas.paste(card_image, (x, y))
 
     image_buffer = BytesIO()
     canvas.save(image_buffer, format="JPEG", quality=88)
@@ -1484,6 +1159,425 @@ class ClaimButton(Button):
             )
 
 # Pagination for inventory
+def build_spin_outcomes(wager_rarity):
+    reward_counts = SPIN_REWARD_COUNTS[wager_rarity]
+    outcomes = [
+        rarity
+        for rarity, count in reward_counts.items()
+        for _ in range(count)
+    ]
+    outcomes.extend([None] * SPIN_BOMB_SLOTS)
+    if len(outcomes) != SPIN_BOARD_SIZE:
+        raise RuntimeError(
+            f"Spin outcomes must fill exactly {SPIN_BOARD_SIZE} buttons."
+        )
+    random.shuffle(outcomes)
+    return outcomes
+
+
+class SpinChoiceButton(Button):
+    def __init__(self, position):
+        super().__init__(
+            label="?",
+            style=discord.ButtonStyle.secondary,
+            row=position // 4,
+        )
+        self.slot_index = position
+
+    async def callback(self, interaction):
+        await self.view.choose(interaction, self.slot_index)
+
+
+class SpinView(View):
+    def __init__(self, ctx, wagered_card, outcomes, spins_remaining):
+        super().__init__(timeout=180)
+        self.ctx = ctx
+        self.wagered_card = wagered_card
+        self.outcomes = outcomes
+        self.spins_remaining = spins_remaining
+        self.resolved = False
+        self.lock = asyncio.Lock()
+        self.message = None
+
+        for position in range(SPIN_BOARD_SIZE):
+            self.add_item(SpinChoiceButton(position))
+
+    def get_embed(self, state="pending"):
+        if state == "pending":
+            reward_counts = SPIN_REWARD_COUNTS[self.wagered_card["rarity"]]
+            rarity_odds = " • ".join(
+                f"{rarity}: {reward_counts[rarity]}/{SPIN_BOARD_SIZE}"
+                for rarity in RARITIES
+            )
+            description = (
+                f"Wagered: **{self.wagered_card['rarity']} "
+                f"{self.wagered_card['name']}** "
+                f"(`{self.wagered_card['serial']}`) — consumed\n"
+                f"Choose one hidden button. An explosion wins nothing; otherwise, "
+                f"you get a new card matching the revealed rarity.\n"
+                f"This board expires in 3 minutes; the wager is already consumed.\n"
+                f"💥 Explosion: {SPIN_BOMB_SLOTS}/{SPIN_BOARD_SIZE}\n"
+                f"{rarity_odds}\n"
+                f"Spins remaining today: **{self.spins_remaining}**"
+            )
+            title = "🎰 Card Spin"
+        else:
+            description = (
+                "The cards are spinning... Will you win a new card, "
+                "or hit an explosion? ✨"
+            )
+            title = "🎰 The spin is in motion..."
+        return discord.Embed(title=title, description=description, color=0xff6b8b)
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message(
+                "Only the person who started this spin can choose a button.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def choose(self, interaction, position):
+        await interaction.response.defer()
+        async with self.lock:
+            if self.resolved:
+                await interaction.followup.send(
+                    "This spin has already ended.", ephemeral=True
+                )
+                return
+            self.resolved = True
+            result = self.outcomes[position]
+            reward_card = None
+
+            if result is not None:
+                try:
+                    with get_db() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute("BEGIN IMMEDIATE")
+                        reward_card = generate_card(
+                            forced_rarity=result,
+                            connection=conn,
+                        )
+                        cursor.execute(
+                            '''INSERT INTO cards
+                               (serial, member_code, era, rarity, owner_id, obtained_at)
+                               VALUES (?, ?, ?, ?, ?, ?)''',
+                            (
+                                reward_card["serial"],
+                                reward_card["member_code"],
+                                reward_card["era"],
+                                reward_card["rarity"],
+                                self.ctx.author.id,
+                                str(datetime.datetime.now()),
+                            ),
+                        )
+                except sqlite3.Error as error:
+                    self.resolved = False
+                    print(f"Database error while awarding spin card: {error}")
+                    await interaction.followup.send(
+                        "Your spin reward couldn't be saved. Please choose a button again.",
+                        ephemeral=True,
+                    )
+                    return
+                except RuntimeError as error:
+                    self.resolved = False
+                    print(f"Could not generate spin reward: {error}")
+                    await interaction.followup.send(
+                        "Your spin reward couldn't be generated. Please choose a button again.",
+                        ephemeral=True,
+                    )
+                    return
+
+            for button in self.children:
+                button.disabled = True
+            selected_button = self.children[position]
+            selected_button.label = "..."
+            await interaction.message.edit(
+                embed=self.get_embed("spinning"),
+                view=self,
+            )
+            await asyncio.sleep(2)
+            if result is None:
+                result_embed = discord.Embed(
+                    title="💥 Oh no! Your spin exploded!",
+                    description=(
+                        "That was the unlucky spot! Your wagered card "
+                        f"(`{self.wagered_card['serial']}`) is gone, "
+                        "and you didn't win a new card. Better luck next time!"
+                    ),
+                    color=0xff6b8b,
+                )
+            else:
+                result_embed = create_drop_embed(
+                    "🎉 Card Spin Successful!",
+                    (
+                        f"{self.ctx.author.mention} won a **{result} "
+                        f"{reward_card['name']}** ({reward_card['serial']})!\n"
+                        f"Wagered card `{self.wagered_card['serial']}` was consumed."
+                    ),
+                    [reward_card],
+                    show_full_name=True,
+                )
+                result_embed.set_image(
+                    url=get_card_image(
+                        reward_card["era"],
+                        reward_card["member_code"],
+                        reward_card["rarity"],
+                    )
+                )
+            for index, button in enumerate(self.children):
+                outcome = self.outcomes[index]
+                button.label = "💥" if outcome is None else outcome
+                button.style = discord.ButtonStyle.secondary
+            selected_button.style = (
+                discord.ButtonStyle.danger
+                if result is None
+                else discord.ButtonStyle.success
+            )
+            await interaction.message.edit(embed=result_embed, view=self)
+
+    async def on_timeout(self):
+        async with self.lock:
+            if self.resolved:
+                return
+            self.resolved = True
+            for button in self.children:
+                button.disabled = True
+            if self.message is not None:
+                embed = self.get_embed()
+                embed.description += (
+                    "\n\n⌛ Spin expired. The wagered card was consumed."
+                )
+                await self.message.edit(embed=embed, view=self)
+
+
+def start_card_spin(user_id, serial):
+    today = datetime.date.today().isoformat()
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+        cursor.execute(
+            '''SELECT member_code, era, rarity
+               FROM cards WHERE serial=? AND owner_id=?''',
+            (serial, user_id),
+        )
+        card_row = cursor.fetchone()
+        if card_row is None:
+            raise ValueError("You don't own a card with that serial anymore.")
+        member_code, era, rarity = card_row
+        if rarity not in SPIN_REWARD_COUNTS:
+            raise ValueError("That card has an unsupported rarity and can't be spun.")
+
+        cursor.execute(
+            "SELECT 1 FROM market_listings WHERE card_serial=?",
+            (serial,),
+        )
+        if cursor.fetchone():
+            raise ValueError(
+                "Unlist that card from the market before using it for a spin."
+            )
+
+        cursor.execute(
+            "SELECT spin_date, spins FROM spin_usage WHERE user_id=?",
+            (user_id,),
+        )
+        usage_row = cursor.fetchone()
+        spins_used = (
+            usage_row[1]
+            if usage_row and usage_row[0] == today
+            else 0
+        )
+        if spins_used >= SPIN_DAILY_LIMIT:
+            raise ValueError(
+                f"You've used all **{SPIN_DAILY_LIMIT} spins** for today. "
+                "Your limit resets at local midnight."
+            )
+
+        member = ERAS[era]["members"][member_code]
+        wagered_card = {
+            "serial": serial,
+            "member_code": member_code,
+            "era": era,
+            "rarity": rarity,
+            "name": member["name"],
+            "full_name": member["full_name"],
+        }
+        outcomes = build_spin_outcomes(rarity)
+        cursor.execute(
+            "DELETE FROM cards WHERE serial=? AND owner_id=?",
+            (serial, user_id),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("The wagered card changed before the spin started.")
+
+        spins_used += 1
+        cursor.execute(
+            '''INSERT INTO spin_usage (user_id, spin_date, spins)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   spin_date=excluded.spin_date,
+                   spins=excluded.spins''',
+            (user_id, today, spins_used),
+        )
+        if spins_used == SPIN_DAILY_LIMIT:
+            reset_at = next_local_midnight_timestamp(today)
+            cursor.execute(
+                '''INSERT OR REPLACE INTO cooldowns
+                   (user_id, cooldown_type, expires_at)
+                   VALUES (?, 'spin', ?)''',
+                (user_id, reset_at),
+            )
+            schedule_cooldown_reminder(
+                cursor,
+                user_id,
+                "spin",
+                reset_at,
+            )
+
+    return wagered_card, outcomes, SPIN_DAILY_LIMIT - spins_used
+
+
+class SpinConfirmationView(View):
+    def __init__(self, ctx, wagered_card, spins_remaining):
+        super().__init__(timeout=60)
+        self.ctx = ctx
+        self.wagered_card = wagered_card
+        self.spins_remaining = spins_remaining
+        self.resolved = False
+        self.lock = asyncio.Lock()
+        self.message = None
+
+    def get_embed(self):
+        rarity = self.wagered_card["rarity"]
+        reward_counts = SPIN_REWARD_COUNTS[rarity]
+        odds = "\n".join(
+            f"**{reward_rarity}:** {count}/{SPIN_BOARD_SIZE} "
+            f"({count / SPIN_BOARD_SIZE * 100:g}%)"
+            for reward_rarity, count in reward_counts.items()
+        )
+        explosion_chance = SPIN_BOMB_SLOTS / SPIN_BOARD_SIZE * 100
+        embed = discord.Embed(
+            title="Confirm Card Spin",
+            description=(
+                f"Are you sure you want to spin "
+                f"**{rarity} {self.wagered_card['name']}** "
+                f"(`{self.wagered_card['serial']}`)?\n"
+                "Confirming permanently consumes this card, even if you hit "
+                "the explosion or the spin board expires.\n\n"
+                f"**Reward chances for a {rarity} wager:**\n{odds}\n"
+                f"**Explosion (no reward):** "
+                f"{SPIN_BOMB_SLOTS}/{SPIN_BOARD_SIZE} ({explosion_chance:g}%)\n\n"
+                f"You'll have 3 minutes to choose from the 4×4 board. "
+                f"Spins remaining today after this: **{self.spins_remaining}**."
+            ),
+            color=0xff6b8b,
+        )
+        embed.set_thumbnail(
+            url=get_card_image(
+                self.wagered_card["era"],
+                self.wagered_card["member_code"],
+                rarity,
+            )
+        )
+        return embed
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message(
+                "Only the person who started this spin can confirm it.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="Confirm Spin", style=discord.ButtonStyle.success)
+    async def confirm_button(self, interaction, button):
+        await interaction.response.defer()
+        async with self.lock:
+            if self.resolved:
+                await interaction.followup.send(
+                    "This spin confirmation has already ended.",
+                    ephemeral=True,
+                )
+                return
+            self.resolved = True
+            await interaction.message.edit(
+                content="Preparing your spin... ✨",
+                embed=None,
+                view=None,
+            )
+            await asyncio.sleep(1.5)
+            try:
+                wagered_card, outcomes, spins_remaining = start_card_spin(
+                    self.ctx.author.id,
+                    self.wagered_card["serial"],
+                )
+            except ValueError as error:
+                await interaction.followup.send(str(error))
+                self.stop()
+                return
+            except sqlite3.Error as error:
+                print(f"Database error while confirming spin: {error}")
+                await interaction.followup.send(
+                    "The spin couldn't be started due to a database error. "
+                    "Your card was not consumed."
+                )
+                self.stop()
+                return
+            except (KeyError, RuntimeError) as error:
+                print(f"Could not start confirmed spin: {error}")
+                await interaction.followup.send(
+                    "The spin couldn't be started. Your card was not consumed."
+                )
+                self.stop()
+                return
+
+            spin_view = SpinView(
+                self.ctx,
+                wagered_card,
+                outcomes,
+                spins_remaining,
+            )
+            spin_view.message = await interaction.message.edit(
+                content=None,
+                embed=spin_view.get_embed(),
+                view=spin_view,
+            )
+            self.stop()
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger)
+    async def cancel_button(self, interaction, button):
+        await interaction.response.defer()
+        async with self.lock:
+            if self.resolved:
+                await interaction.followup.send(
+                    "This spin confirmation has already ended.",
+                    ephemeral=True,
+                )
+                return
+            self.resolved = True
+            await interaction.message.edit(
+                content="Spin cancelled. Your card was not consumed.",
+                embed=None,
+                view=None,
+            )
+            self.stop()
+
+    async def on_timeout(self):
+        if self.resolved:
+            return
+        self.resolved = True
+        for button in self.children:
+            button.disabled = True
+        if self.message is not None:
+            await self.message.edit(
+                content="Spin confirmation expired. Your card was not consumed.",
+                embed=None,
+                view=self,
+            )
+
+
 class InventoryView(View):
     def __init__(self, cards, user_display_name, ctx):
         super().__init__(timeout=180)  # 3 minute timeout
@@ -1564,7 +1658,7 @@ async def on_ready():
     if not cooldown_reminder_loop.is_running():
         cooldown_reminder_loop.start()
 
-@bot.command(name='8ball')
+@slash_command(name='8ball')
 async def eight_ball(ctx, *, question):
     """Ask the magic 8-ball a question."""
     responses = [
@@ -1578,11 +1672,11 @@ async def eight_ball(ctx, *, question):
     ]
     await ctx.reply(f'{random.choice(responses)}')
 
-@bot.command(name='choose')
+@slash_command(name='choose')
 async def choose(ctx, *, options):
     """Choose between multiple options (separate with 'or')."""
     if ' or ' not in options:
-        await ctx.reply("Please provide options separated by 'or' (e.g., k!choose pizza or burger or pasta)")
+        await ctx.reply("Please provide options separated by 'or' (e.g., `/choose` with `pizza or burger or pasta`).")
         return
     
     choices = [option.strip() for option in options.split(' or ')]
@@ -1592,12 +1686,20 @@ async def choose(ctx, *, options):
     
     await ctx.reply(f"{random.choice(choices)}!")
 
-@bot.group(name='minigame', invoke_without_command=True)
+minigame_group = app_commands.Group(
+    name="minigame",
+    description="Browse and play minigames.",
+)
+bot.tree.add_command(minigame_group)
+SLASH_COMMANDS["minigame"] = minigame_group
+
+
+@slash_command(name="list", group=minigame_group)
 async def minigame(ctx):
     """Show the available minigames."""
     embed = discord.Embed(
         title="🎮 Minigames",
-        description="Play a minigame with `k!minigame play <number>`.",
+        description="Use `/minigame play` to choose a minigame.",
         color=0xff6b8b,
     )
     for number, (name, description) in enumerate(MINIGAMES, 1):
@@ -1608,20 +1710,20 @@ async def minigame(ctx):
         )
     await ctx.reply(embed=embed)
 
-@minigame.command(name='play')
+@slash_command(name="play", group=minigame_group)
 async def minigame_play(ctx, number: int):
     """Select a minigame by its number."""
     if number < 1 or number > len(MINIGAMES):
         await ctx.reply(
             f"Choose a minigame number from 1 to {len(MINIGAMES)}. "
-            "Use `k!minigame` to see the list."
+            "Use `/minigame list` to see the list."
         )
         return
 
     name = MINIGAMES[number - 1][0]
     await ctx.reply(f"**{name}** isn't available yet. Check back later!")
 
-@bot.command(name='daily')
+@slash_command(name='daily')
 async def daily(ctx):
     """Claim your daily COMO reward (24h cooldown)."""
     user_id = ctx.author.id
@@ -1747,7 +1849,7 @@ async def daily(ctx):
             await ctx.reply("An error occurred. Please try again later.")
             return
 
-@bot.command(name='balance', aliases=['como', 'bal'])
+@slash_command(name='balance', aliases=('como', 'bal'))
 async def balance(ctx, user: discord.Member = None):
     """Check COMO balance for yourself or another user."""
     user = user or ctx.author
@@ -1764,14 +1866,14 @@ async def balance(ctx, user: discord.Member = None):
                 await ctx.reply(f"{user.display_name} has {como} COMO")
             else:
                 if user.id == ctx.author.id:
-                    await ctx.reply("You don't have a COMO balance yet. Use `k!daily` to get started!")
+                    await ctx.reply("You don't have a COMO balance yet. Use `/daily` to get started!")
                 else:
                     await ctx.reply(f"{user.display_name} doesn't have a COMO balance yet.")
     except Exception as e:
         print(f"Error in balance command: {e}")
         await ctx.reply("An error occurred. Please try again later.")
 
-@bot.command(name='shop')
+@slash_command(name='shop')
 async def shop(ctx, *, query: str = ""):
     """View shop items or purchase an item with COMO."""
     parts = query.strip().split(maxsplit=1)
@@ -1779,8 +1881,8 @@ async def shop(ctx, *, query: str = ""):
         embed = discord.Embed(
             title="🛍️ Kotone Shop",
             description=(
-                "Items go into your item inventory. View them with `k!items` "
-                "and activate them with `k!use <item>`."
+                "Items go into your item inventory. View them with `/items` "
+                "and activate them with `/use`."
             ),
             color=0xff6b8b,
         )
@@ -1789,13 +1891,13 @@ async def shop(ctx, *, query: str = ""):
             value=(
                 "Boosts Rare, Epic, Legendary, and Mythic drop weights for 1 hour when used. "
                 "Using another while active extends its duration.\n"
-                "`k!shop buy booster`"
+                "`/shop` with `buy booster`"
             ),
             inline=False,
         )
         embed.add_field(
             name="🎴 Drop Cooldown Reset — 200 COMO",
-            value="Use while `k!drop` is on cooldown to reset it.\n`k!shop buy drop`",
+            value="Use while `/drop` is on cooldown to reset it.\n`/shop` with `buy drop`",
             inline=False,
         )
         embed.add_field(
@@ -1803,7 +1905,7 @@ async def shop(ctx, *, query: str = ""):
             value=(
                 "Activate it to merge 9 same-rarity cards instead of 10. "
                 "It is consumed only when the merge is confirmed.\n"
-                "`k!shop buy merge` then `k!use merge`"
+                "`/shop` with `buy merge`, then `/use` with `merge`"
             ),
             inline=False,
         )
@@ -1812,15 +1914,15 @@ async def shop(ctx, *, query: str = ""):
             value=(
                 "Activate it to automatically protect your streak after missing "
                 "exactly one day. It is consumed only when needed.\n"
-                "`k!shop buy shield` then `k!use shield`"
+                "`/shop` with `buy shield`, then `/use` with `shield`"
             ),
             inline=False,
         )
         embed.add_field(
             name="🎴 Extra Drop Slot — 400 COMO",
             value=(
-                "Activate it to add one card to your next successful `k!drop`.\n"
-                "`k!shop buy extra_drop` then `k!use extra_drop`"
+                "Activate it to add one card to your next successful `/drop`.\n"
+                "`/shop` with `buy extra_drop`, then `/use` with `extra_drop`"
             ),
             inline=False,
         )
@@ -1854,13 +1956,14 @@ async def shop(ctx, *, query: str = ""):
     item_name = parts[1] if len(parts) > 1 else ""
     if action != "buy" or not item_name:
         await ctx.reply(
-            "Use `k!shop` to view items or `k!shop buy <item>` to purchase one."
+            "Use `/shop` without an option to view items, or set its query to "
+            "`buy <item>` to purchase one."
         )
         return
     item_key = SHOP_ITEM_ALIASES.get(item_name.strip().casefold().replace(" ", "_"))
     if item_key is None:
         await ctx.reply(
-            "Unknown shop item. Use `k!shop` to see available items."
+            "Unknown shop item. Use `/shop` to see available items."
         )
         return
 
@@ -1868,7 +1971,7 @@ async def shop(ctx, *, query: str = ""):
         new_balance = purchase_shop_item(ctx.author.id, item_key)
         await ctx.reply(
             f"Bought **{SHOP_ITEMS[item_key]['name']}** for "
-            f"**{SHOP_ITEMS[item_key]['price']} COMO**. It's now in `k!items`. "
+            f"**{SHOP_ITEMS[item_key]['price']} COMO**. It's now in `/items`. "
             f"Your balance is **{new_balance} COMO**."
         )
     except ValueError as error:
@@ -1877,7 +1980,7 @@ async def shop(ctx, *, query: str = ""):
         print(f"Database error while purchasing shop item: {error}")
         await ctx.reply("The purchase couldn't be completed due to a database error.")
 
-@bot.command(name='items')
+@slash_command(name='items')
 async def items(ctx):
     """Show the items in your consumable inventory."""
     try:
@@ -1915,14 +2018,14 @@ async def items(ctx):
                 if item is not None:
                     embed.add_field(
                         name=item["name"],
-                        value=f"Quantity: **{quantity}**\nUse: `k!use {item_key}`",
+                        value=f"Quantity: **{quantity}**\nUse `/use` with `{item_key}`.",
                         inline=False,
                     )
         elif (
             (not active_effects or not any(active_effects))
             and not (booster and booster[0] > time.time())
         ):
-            embed.description = "You don't have any items yet. Visit `k!shop` to buy some."
+            embed.description = "You don't have any items yet. Visit `/shop` to buy some."
         else:
             embed.description = "Your item inventory is empty; activated effects are listed below."
 
@@ -1952,7 +2055,7 @@ async def items(ctx):
         print(f"Database error while viewing items: {error}")
         await ctx.reply("Your items couldn't be loaded due to a database error.")
 
-@bot.command(name='use')
+@slash_command(name='use')
 async def use_item(ctx, *, item_name: str = ""):
     """Consume an item from your item inventory."""
     item_key = SHOP_ITEM_ALIASES.get(
@@ -1960,8 +2063,8 @@ async def use_item(ctx, *, item_name: str = ""):
     )
     if item_key is None:
         await ctx.reply(
-            "Choose an item to use: `k!use booster`, `k!use drop`, "
-            "`k!use merge`, `k!use shield`, or `k!use extra_drop`."
+            "Choose an item to use with `/use`: `booster`, `drop`, "
+            "`merge`, `shield`, or `extra_drop`."
         )
         return
 
@@ -1977,7 +2080,7 @@ async def use_item(ctx, *, item_name: str = ""):
         print(f"Shop item use failed: {error}")
         await ctx.reply("The item couldn't be used. Please try again.")
 
-@bot.command(name='drop')
+@slash_command(name='drop')
 async def drop(ctx):
     """Drop 3 random cards for claiming."""
     user_id = ctx.author.id
@@ -2201,7 +2304,7 @@ def get_merge_selection(cursor, user_id, serials):
         discount = cursor.fetchone()
         if discount is None or discount[0] <= 0:
             raise ValueError(
-                "You need to activate a Merge Discount Token with `k!use merge` "
+                "You need to activate a Merge Discount Token with `/use` and `merge` "
                 "before merging 9 cards."
             )
 
@@ -2367,14 +2470,105 @@ class MergeConfirmationView(View):
         )
         self.stop()
 
-@bot.command(name='merge')
+@slash_command(name='spin')
+async def spin(ctx, serial: str = ""):
+    """Preview the odds and confirm wagering an owned card on a spin.
+
+    Confirming consumes the wager. Each spin has one explosion among 16 buttons,
+    and up to five spins are allowed per local day.
+    """
+    serial = serial.strip()
+    if not serial:
+        await ctx.reply(
+            "Choose one of your owned card serials with `/spin serial`. "
+            "Your wagered card is consumed."
+        )
+        return
+    if len(serial) > 50:
+        await ctx.reply("Invalid serial number.")
+        return
+
+    today = datetime.date.today().isoformat()
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT member_code, era, rarity
+                   FROM cards WHERE serial=? AND owner_id=?''',
+                (serial, ctx.author.id),
+            )
+            card_row = cursor.fetchone()
+            if card_row is None:
+                await ctx.reply("You don't own a card with that serial.")
+                return
+            member_code, era, rarity = card_row
+            if rarity not in SPIN_REWARD_COUNTS:
+                await ctx.reply(
+                    "That card has an unsupported rarity and can't be spun."
+                )
+                return
+            cursor.execute(
+                "SELECT 1 FROM market_listings WHERE card_serial=?",
+                (serial,),
+            )
+            if cursor.fetchone():
+                await ctx.reply(
+                    "Unlist that card from the market before using it for a spin."
+                )
+                return
+            cursor.execute(
+                "SELECT spin_date, spins FROM spin_usage WHERE user_id=?",
+                (ctx.author.id,),
+            )
+            usage_row = cursor.fetchone()
+            spins_used = (
+                usage_row[1]
+                if usage_row and usage_row[0] == today
+                else 0
+            )
+            if spins_used >= SPIN_DAILY_LIMIT:
+                await ctx.reply(
+                    f"You've used all **{SPIN_DAILY_LIMIT} spins** for today. "
+                    "Your limit resets at local midnight."
+                )
+                return
+            member = ERAS[era]["members"][member_code]
+            wagered_card = {
+                "serial": serial,
+                "member_code": member_code,
+                "era": era,
+                "rarity": rarity,
+                "name": member["name"],
+                "full_name": member["full_name"],
+            }
+    except sqlite3.Error as error:
+        print(f"Database error while preparing spin for {ctx.author.id}: {error}")
+        await ctx.reply("Spin odds couldn't be checked due to a database error.")
+        return
+    except KeyError as error:
+        print(f"Could not prepare spin for {ctx.author.id}: {error}")
+        await ctx.reply("That card's details couldn't be loaded for a spin.")
+        return
+
+    view = SpinConfirmationView(
+        ctx,
+        wagered_card,
+        SPIN_DAILY_LIMIT - spins_used - 1,
+    )
+    view.message = await ctx.reply(
+        embed=view.get_embed(),
+        view=view,
+    )
+
+
+@slash_command(name='merge')
 async def merge_cards(ctx, *, card_serials: str = ""):
     """Confirm a merge of selected owned cards into the next rarity."""
     serials = card_serials.replace(",", " ").split()
     if len(serials) not in {9, 10} or len(set(serials)) != len(serials):
         await ctx.reply(
             "Provide 10 different serials, or 9 after activating a Merge Discount Token. Example: "
-            "`k!merge LJW-XXXXX KYY-XXXXX KAE-XXXXX ...`."
+            "`/merge` with the card serials separated by spaces."
         )
         return
 
@@ -2424,42 +2618,6 @@ async def merge_cards(ctx, *, card_serials: str = ""):
     view = MergeConfirmationView(ctx.author.id, serials)
     view.message = await ctx.reply(embed=confirmation_embed, view=view)
 
-def normalize_era_alias(value):
-    return re.sub(r"[^a-z0-9]", "", value.casefold())
-
-ERA_ALIASES = {
-    "ASSEMBLE": (
-        "ASSEMBLE",
-        "RISING",
-    ),
-    "ASSEMBLE24": (
-        "ASSEMBLE24",
-        "ASSEMBLE 24",
-        "GND",
-        "Girls Never Die",
-        "S1-S24",
-        "S1 to S24",
-    ),
-    "AAA": (
-        "AAA",
-        "Generation",
-        "acid angel asia",
-        "acid angel of asia",
-        "asid angel of asia",
-        "asid angel asia",
-    ),
-    "KRE": (
-        "KRE",
-        "Krystal Eyes",
-        "+(KR)ystal Eyes",
-        "Cherry Talk",
-    ),
-}
-ERA_ALIAS_LOOKUP = {
-    normalize_era_alias(alias): era
-    for era, aliases in ERA_ALIASES.items()
-    for alias in aliases
-}
 
 def create_collection_embed(
     user,
@@ -2628,14 +2786,14 @@ class CollectionView(View):
                 ephemeral=True,
             )
 
-@bot.command(name='collection')
+@slash_command(name='collection')
 async def collection(ctx, *, query: str = ""):
     """Show your owned cards for one era, with rarity filters."""
     parts = query.strip().split()
     if not parts:
         await ctx.reply(
             "Choose an era, optionally with a rarity. Example: "
-            "`k!collection ASSEMBLE rare`."
+            "`/collection` with `ASSEMBLE rare`."
         )
         return
 
@@ -2708,39 +2866,11 @@ async def collection(ctx, *, query: str = ""):
         print(f"Error while creating collection: {error}")
         await ctx.reply("An error occurred while creating your collection.")
 
-@bot.command(name='inventory', aliases=['inv'])
-async def inventory(ctx, *, query: str = ""):
+@slash_command(name='inventory', aliases=('inv',))
+async def inventory(ctx, user: discord.Member = None, *, query: str = ""):
     """View and filter your card inventory or another user's."""
-    user = ctx.author
+    user = user or ctx.author
     query = query.strip()
-    catalog_terms = {rarity.casefold() for rarity in RARITIES}
-    catalog_terms.update(f"s{number}" for number in range(1, len(S_ORDER) + 1))
-    for era_code, era_data in ERAS.items():
-        catalog_terms.add(era_code.casefold())
-        catalog_terms.add(era_data['name'].casefold())
-        for member_code, member_data in era_data['members'].items():
-            catalog_terms.add(member_code.casefold())
-            for value in (member_data['name'], member_data['full_name']):
-                catalog_terms.update(
-                    value.casefold().replace('(', ' ').replace(')', ' ').split()
-                )
-
-    if ctx.message.mentions:
-        user = ctx.message.mentions[0]
-        for mentioned_user in ctx.message.mentions:
-            query = query.replace(mentioned_user.mention, ' ')
-            query = query.replace(f'<@{mentioned_user.id}>', ' ')
-            query = query.replace(f'<@!{mentioned_user.id}>', ' ')
-        query = query.strip()
-    elif query and not all(
-        term.casefold() in catalog_terms for term in query.replace(',', ' ').split()
-    ):
-        try:
-            user = await commands.MemberConverter().convert(ctx, query)
-            query = ''
-        except commands.MemberNotFound:
-            pass
-
     search_terms = query.casefold().replace(',', ' ').split()
     user_id = user.id
     
@@ -2796,7 +2926,7 @@ async def inventory(ctx, *, query: str = ""):
         print(f"Error in inventory command: {e}")
         await ctx.reply("An error occurred while fetching inventory. Please try again.")
 
-@bot.command(name='view')
+@slash_command(name='view')
 async def view_card(ctx, serial: str):
     """View detailed information about a specific card."""
     # Basic input validation
@@ -2884,7 +3014,7 @@ async def view_card(ctx, serial: str):
         print(f"Error in view command: {e}")
         await ctx.reply("An error occurred while viewing the card. Please try again.")
 
-@bot.command(name='give', aliases=['gift', 'send'])
+@slash_command(name='give', aliases=('gift', 'send'))
 async def give_card(ctx, recipient: discord.Member, serial: str):
     """Give a card to another user."""
     # Validation
@@ -2948,7 +3078,7 @@ async def give_card(ctx, recipient: discord.Member, serial: str):
         print(f"Error in give command: {e}")
         await ctx.reply("An error occurred while transferring the card. Please try again.")
 
-@bot.command(name='target')
+@slash_command(name='target')
 async def target_command(ctx, *, query: str = ""):
     """Set or clear the member/rarity/era you want to target."""
     query = query.strip()
@@ -2964,12 +3094,12 @@ async def target_command(ctx, *, query: str = ""):
         if current_target:
             await ctx.reply(
                 f"Your current target is **{format_target(current_target)}**. "
-                "Use `k!target clear` to remove it."
+                "Use `/target` with `clear` to remove it."
             )
         else:
             await ctx.reply(
-                "Set a target with `k!target <member>`, optionally adding a rarity "
-                "and/or era (for example, `k!target rare jiwoo`)."
+                "Set a target with `/target` and a member, optionally adding a rarity "
+                "and/or era (for example, `rare jiwoo`)."
             )
         return
 
@@ -3098,14 +3228,14 @@ def parse_biases(query):
 
     return sorted(set(matched_codes), key=S_ORDER.index)
 
-@bot.command(name='bias')
+@slash_command(name='bias')
 async def bias_command(ctx, *, query: str = ""):
     """Set or clear the members shown as your profile biases."""
     query = query.strip()
     if not query:
         await ctx.reply(
-            "Set your biases with `k!bias set jiwoo seoyeon yooyeon`, "
-            "or clear them with `k!bias clear`."
+            "Set your biases with `/bias` and `set jiwoo seoyeon yooyeon`, "
+            "or clear them with `/bias` and `clear`."
         )
         return
 
@@ -3119,7 +3249,7 @@ async def bias_command(ctx, *, query: str = ""):
 
     if action.casefold() != "set" or not names.strip():
         await ctx.reply(
-            "Use `k!bias set <member names>` or `k!bias clear`."
+            "Use `/bias` with `set <member names>` or `clear`."
         )
         return
 
@@ -3148,7 +3278,7 @@ async def bias_command(ctx, *, query: str = ""):
         + "**"
     )
 
-@bot.command(name='profile')
+@slash_command(name='profile')
 async def profile(ctx, user: discord.Member = None):
     """Show a player's card collection profile."""
     user = user or ctx.author
@@ -3203,7 +3333,7 @@ async def profile(ctx, user: discord.Member = None):
         print(f"Error in profile command: {e}")
         await ctx.reply("An error occurred while fetching the profile.")
 
-@bot.command(name='bio')
+@slash_command(name='bio')
 async def bio_command(ctx, *, query: str = ""):
     """Set or clear your profile bio."""
     action, _, bio = query.strip().partition(" ")
@@ -3215,7 +3345,7 @@ async def bio_command(ctx, *, query: str = ""):
         return
 
     if action.casefold() != "set" or not bio.strip():
-        await ctx.reply("Use `k!bio set <your bio>` or `k!bio clear`.")
+        await ctx.reply("Use `/bio` with `set <your bio>` or `clear`.")
         return
 
     bio = bio.strip()
@@ -3237,7 +3367,7 @@ async def bio_command(ctx, *, query: str = ""):
 
     await ctx.reply("Your profile bio has been set!")
 
-@bot.command(name='stats')
+@slash_command(name='stats')
 async def stats(ctx, user: discord.Member = None):
     """View statistics about your card collection."""
     user = user or ctx.author
@@ -3321,16 +3451,18 @@ async def stats(ctx, user: discord.Member = None):
         print(f"Error in stats command: {e}")
         await ctx.reply("An error occurred while fetching stats. Please try again.")
 
-@bot.command(name='cooldown', aliases=['cd'])
+@slash_command(name='cooldown', aliases=('cd',))
 async def cooldown(ctx):
     """Show the time remaining on your cooldowns."""
     cooldown_labels = {
         'daily': '📅 Daily',
         'weekly': '🗓️ Weekly',
         'drop': '🎴 Drop',
+        'spin': '🎰 Spin',
         'claim': '🙋 Claim',
     }
     now = time.time()
+    today = datetime.date.today().isoformat()
 
     try:
         with get_db() as conn:
@@ -3344,6 +3476,16 @@ async def cooldown(ctx):
                 cooldown_type: expires_at
                 for cooldown_type, expires_at in c.fetchall()
             }
+            c.execute(
+                "SELECT spin_date, spins FROM spin_usage WHERE user_id=?",
+                (ctx.author.id,),
+            )
+            spin_usage = c.fetchone()
+            spins_used = (
+                spin_usage[1]
+                if spin_usage and spin_usage[0] == today
+                else 0
+            )
 
         embed = discord.Embed(title="Cooldowns", color=0xff6b8b)
         embed.set_thumbnail(url=ctx.author.display_avatar.url)
@@ -3355,7 +3497,32 @@ async def cooldown(ctx):
 
         for cooldown_type in cooldown_types:
             expires_at = active_cooldowns.get(cooldown_type)
-            if expires_at is None:
+            if cooldown_type == "spin":
+                if spins_used >= SPIN_DAILY_LIMIT:
+                    reset_at = expires_at or next_local_midnight_timestamp(today)
+                    remaining = max(0, int(reset_at - now))
+                    days, remainder = divmod(remaining, 86400)
+                    hours, remainder = divmod(remainder, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    parts = []
+                    if days:
+                        parts.append(f"{days}d")
+                    if hours:
+                        parts.append(f"{hours}h")
+                    if minutes:
+                        parts.append(f"{minutes}m")
+                    if seconds or not parts:
+                        parts.append(f"{seconds}s")
+                    remaining_text = (
+                        f"Limit reached ({spins_used}/{SPIN_DAILY_LIMIT}) "
+                        f"• resets in {' '.join(parts)}"
+                    )
+                else:
+                    remaining_text = (
+                        f"{spins_used}/{SPIN_DAILY_LIMIT} used • "
+                        f"{SPIN_DAILY_LIMIT - spins_used} left today"
+                    )
+            elif expires_at is None:
                 remaining_text = "Ready ✅"
             else:
                 remaining = max(0, int(expires_at - now))
@@ -3387,19 +3554,19 @@ async def cooldown(ctx):
         print(f"Error in cooldown command: {e}")
         await ctx.reply("An error occurred while checking your cooldowns.")
 
-@bot.command(name='remind', aliases=['reminder', 'reminders'])
+@slash_command(name='remind', aliases=('reminder', 'reminders'))
 async def cooldown_reminders(ctx, *, options: str = ""):
     """Choose which cooldown resets should be sent to you by DM."""
     parts = options.casefold().split()
     if parts:
         if parts[0] != "all" and parts[0] not in COOLDOWN_REMINDER_TYPES:
             await ctx.reply(
-                "Choose `daily`, `weekly`, `drop`, `claim`, or `all`."
+                "Choose `daily`, `weekly`, `drop`, `spin`, `claim`, or `all`."
             )
             return
         if len(parts) > 2 or (len(parts) == 2 and parts[1] not in {"on", "off"}):
             await ctx.reply(
-                "Use `k!remind <daily|weekly|drop|claim|all> [on|off]`."
+                "Use `/remind` with `<daily|weekly|drop|spin|claim|all> [on|off]`."
             )
             return
     now = time.time()
@@ -3481,88 +3648,145 @@ async def cooldown_reminders(ctx, *, options: str = ""):
         await ctx.reply(
             "Cooldown reminder settings (sent by DM):\n"
             f"{settings_text}\n\n"
-            "Use `k!remind daily` to enable one, "
-            "`k!remind drop off` to disable one, or `k!remind all on/off`."
+            "Use `/remind` with `daily` to enable one, "
+            "`spin` to enable the daily spin reset reminder, "
+            "or `all on/off`."
         )
 
-@bot.command(name='help')
-async def help_command(ctx):
-    """Display help information about bot commands."""
-    embed = discord.Embed(
-        title="🦭 Kotone Bot Commands",
-        description="Here are all the available commands:",
-        color=0xff6b8b
-    )
-    
-    embed.add_field(
-        name="💰 Economy",
-        value=(
-            "`k!daily` - Claim daily COMO (streak bonuses!)\n"
-            "`k!weekly` - Claim weekly COMO and a random card\n"
-            "`k!cooldown` or `k!cd` - Check your active cooldowns\n"
-            "`k!remind` or `k!reminder` - Choose cooldown reset DM reminders\n"
-            "`k!balance` or `k!como` - Check your COMO balance\n"
-            "`k!shop` - View items; `k!shop buy <item>` - Buy an item\n"
-            "`k!items` - View your items; `k!use <item>` - Use an item from your inventory\n"
-            "`k!transfer <@user> <amount>` - Send COMO to another user"
+HELP_CATEGORIES = (
+    ("💰 Economy", ("daily", "weekly", "balance", "shop", "items", "use", "transfer")),
+    (
+        "🎴 Cards",
+        (
+            "drop", "spin", "inventory", "view", "merge", "collection", "give",
+            "target", "bias", "bio", "profile", "stats",
         ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🎴 Cards",
-        value=(
-            "`k!drop` - Drop 3 random cards (10min cooldown)\n"
-            "`k!inventory` or `k!inv` - View your cards\n"
-            "`k!view <serial>` - View detailed card info\n"
-            "`k!merge <10 serials>` - Merge 10 owned cards; use a Merge Discount Token for 9\n"
-            "`k!collection <era> [rarity]` - View your era collection; rarity can come before or after the era\n"
-            "`k!give <@user> <serial>` - Give a card to someone\n"
-            "`k!target <member>` - Set or change your single card target; `k!target clear` removes it\n"
-            "`k!bias set <names or S numbers>` - Set multiple profile biases in S order; `k!bias clear` removes them\n"
-            "`k!bio set <text>` - Set your profile bio; `k!bio clear` removes it\n"
-            "`k!profile [@user]` - View a player profile\n"
-            "`k!stats` - View your collection statistics"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🏪 Market",
-        value=(
-            "`k!market` - View cards for sale\n"
-            "`k!mylistings` or `k!mymarket` - View only your market listings\n"
-            "`k!list <serial> <price>` - List a card for sale\n"
-            "`k!unlist <serial>` - Remove your listing\n"
-            "`k!buy <serial>` - Buy a card from the market"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🎮 Fun",
-        value=(
-            "`k!afk [reason]` - Set your AFK status; it clears when you speak again\n"
-            "`k!minigame` - View minigames; `k!minigame play <number>` - Select a minigame\n"
-            "`k!8ball <question>` - Ask the magic 8-ball\n"
-            "`k!choose <option> or <option>` - Choose between options\n"
-            "`k!rob` - Try to rob someone (just for fun!)"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="📝 Notes",
-        value=(
-            "• Claim cooldown: 5 minutes\n"
-            "• Drop cooldown: 10 minutes\n"
-            "• Daily streak bonus at 5+ days: 2x COMO\n"
-            "• Dropper gets first claim on their drops"
-        ),
-        inline=False
-    )
-    
-    await ctx.reply(embed=embed)
+    ),
+    ("🏪 Market", ("market", "list", "unlist", "buy")),
+    (
+        "🎮 Fun & utility",
+        ("help", "cooldown", "remind", "afk", "minigame", "8ball", "choose", "rob"),
+    ),
+)
+
+
+class HelpView(View):
+    def __init__(self, ctx):
+        super().__init__(timeout=180)
+        self.ctx = ctx
+        self.current_page = 0
+        self.update_buttons()
+
+    def update_buttons(self):
+        self.children[0].disabled = self.current_page == 0
+        self.children[1].disabled = self.current_page == len(HELP_CATEGORIES) - 1
+
+    def get_embed(self):
+        category_name, command_names = HELP_CATEGORIES[self.current_page]
+        command_list = []
+        for command_name in command_names:
+            command = SLASH_COMMANDS.get(command_name)
+            if command is None:
+                continue
+            description = command.description or "No description available."
+            if isinstance(command, app_commands.Group):
+                command_list.extend(
+                    f"`/{command.name} {subcommand.name}` — "
+                    f"{subcommand.description or description}"
+                    for subcommand in command.commands
+                )
+            else:
+                aliases = SLASH_COMMAND_ALIASES.get(command.name, ())
+                alias_text = (
+                    f" (aliases: {', '.join(f'/{alias}' for alias in aliases)})"
+                    if aliases
+                    else ""
+                )
+                command_list.append(
+                    f"`/{command.name}`{alias_text} — {description}"
+                )
+
+        embed = discord.Embed(
+            title=f"🦭 Commands • {category_name}",
+            description="Use `/help` with a command name to view its details.",
+            color=0xff6b8b,
+        )
+        embed.add_field(
+            name="Available commands",
+            value="\n".join(command_list) or "No commands available.",
+            inline=False,
+        )
+        embed.set_footer(
+            text=f"Page {self.current_page + 1}/{len(HELP_CATEGORIES)}"
+        )
+        return embed
+
+    @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.primary)
+    async def previous_button(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message(
+                "This is not your help menu!", ephemeral=True
+            )
+            return
+        self.current_page -= 1
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.primary)
+    async def next_button(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.ctx.author.id:
+            await interaction.response.send_message(
+                "This is not your help menu!", ephemeral=True
+            )
+            return
+        self.current_page += 1
+        self.update_buttons()
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+
+@slash_command(name='help')
+async def help_command(ctx, *, command_name: str = ""):
+    """Show command categories or get usage details for a command."""
+    command_name = command_name.strip()
+    if command_name:
+        command = SLASH_COMMANDS.get(command_name.casefold())
+        if command is None:
+            await ctx.reply(
+                f"I couldn't find `/{command_name}`. Use `/help` "
+                "to browse available commands."
+            )
+            return
+
+        qualified_name = getattr(command, "qualified_name", command.name)
+        usage = f"/{qualified_name}"
+        for parameter in getattr(command, "parameters", ()):
+            marker = "<" if parameter.required else "["
+            closing_marker = ">" if parameter.required else "]"
+            usage += f" {marker}{parameter.name}{closing_marker}"
+        embed = discord.Embed(
+            title=f"Help • /{qualified_name}",
+            description=command.description or "No description available.",
+            color=0xff6b8b,
+        )
+        embed.add_field(name="Usage", value=f"`{usage}`", inline=False)
+        aliases = SLASH_COMMAND_ALIASES.get(command.name, ())
+        if aliases:
+            embed.add_field(
+                name="Aliases",
+                value=", ".join(f"`/{alias}`" for alias in aliases),
+                inline=False,
+            )
+        if isinstance(command, app_commands.Group) and command.commands:
+            subcommands = " • ".join(
+                f"`/{command.name} {subcommand.name}`"
+                for subcommand in command.commands
+            )
+            embed.add_field(name="Subcommands", value=subcommands, inline=False)
+        await ctx.reply(embed=embed)
+        return
+
+    view = HelpView(ctx)
+    await ctx.reply(embed=view.get_embed(), view=view)
 
 def format_afk_duration(elapsed_seconds):
     units = (
@@ -3582,7 +3806,7 @@ def format_afk_duration(elapsed_seconds):
             return f"{count} {unit_name}{plural}"
     return "1 second"
 
-@bot.command(name='afk')
+@slash_command(name='afk')
 async def afk(ctx, *, reason: str = "AFK"):
     """Set an AFK status that clears when you send another message."""
     if ctx.guild is None:
@@ -3612,7 +3836,7 @@ async def afk(ctx, *, reason: str = "AFK"):
         allowed_mentions=discord.AllowedMentions.none(),
     )
 
-@bot.command(name='weekly')
+@slash_command(name='weekly')
 async def weekly(ctx):
     """Claim your weekly COMO and random card reward (7-day cooldown)."""
     user_id = ctx.author.id
@@ -3698,9 +3922,12 @@ async def weekly(ctx):
         print(f"Error in weekly command: {e}")
         await ctx.reply("An error occurred. Please try again later.")
 
-@bot.command(name='market', aliases=['listing', 'mylistings', 'mylisting', 'mymarket'])
+@slash_command(
+    name='market',
+    aliases=('listing', 'mylistings', 'mylisting', 'mymarket'),
+)
 async def market(ctx):
-    """View all market listings, or only your own with k!mylistings."""
+    """View all market listings, or only your own with /mylistings."""
     own_listings_only = ctx.invoked_with in ('mylistings', 'mylisting', 'mymarket')
 
     try:
@@ -3721,7 +3948,7 @@ async def market(ctx):
             if own_listings_only:
                 await ctx.reply("You don't have any cards listed on the market.")
                 return
-            await ctx.reply("The market is empty. List a card with `k!list <serial> <price>`!")
+            await ctx.reply("The market is empty. List a card with `/list`!")
             return
 
         # Create paginated view (reuse InventoryView-like structure)
@@ -3799,7 +4026,7 @@ async def market(ctx):
         print(f"Error in market command: {e}")
         await ctx.reply("An error occurred while fetching the market.")
 
-@bot.command(name='list')
+@slash_command(name='list')
 async def list_card(ctx, serial: str, price: int):
     """List a card for sale at a given price (COMO)."""
     if price <= 0:
@@ -3848,7 +4075,7 @@ async def list_card(ctx, serial: str, price: int):
         print(f"Error in list command: {e}")
         await ctx.reply("An error occurred while listing the card.")
 
-@bot.command(name='unlist')
+@slash_command(name='unlist')
 async def unlist_card(ctx, serial: str):
     """Remove your card from the market."""
     user_id = ctx.author.id
@@ -3878,7 +4105,7 @@ async def unlist_card(ctx, serial: str):
         print(f"Error in unlist command: {e}")
         await ctx.reply("An error occurred while removing the listing.")
 
-@bot.command(name='buy')
+@slash_command(name='buy')
 async def buy_card(ctx, serial: str):
     """Buy a card from the market using COMO."""
     buyer_id = ctx.author.id
@@ -3971,7 +4198,7 @@ async def buy_card(ctx, serial: str):
 
 # -------------------- NEW COMMANDS --------------------
 
-@bot.command(name='rob')
+@slash_command(name='rob')
 async def rob(ctx, user: discord.Member = None):
     """Funny easter egg: no robbing allowed!"""
     responses = [
@@ -3991,7 +4218,7 @@ async def rob(ctx, user: discord.Member = None):
     else:
         await ctx.reply(random.choice(responses))
 
-@bot.command(name='transfer')
+@slash_command(name='transfer')
 async def transfer(ctx, recipient: discord.Member, amount: int):
     """Transfer COMO to another user."""
     sender_id = ctx.author.id
@@ -4014,7 +4241,7 @@ async def transfer(ctx, recipient: discord.Member, amount: int):
             c.execute("SELECT como FROM users WHERE user_id=?", (sender_id,))
             sender_row = c.fetchone()
             if not sender_row:
-                await ctx.reply("You don't have any COMO yet. Use `k!daily` to get some!")
+                await ctx.reply("You don't have any COMO yet. Use `/daily` to get some!")
                 return
             sender_balance = sender_row[0]
             if sender_balance < amount:
@@ -4062,10 +4289,6 @@ async def on_message(message):
 
     afk_responses = []
     if message.guild is not None:
-        message_parts = message.content.split(maxsplit=1)
-        is_afk_command = bool(
-            message_parts and message_parts[0].casefold() == "k!afk"
-        )
         mentioned_users = {
             user.id: user
             for user in message.mentions
@@ -4074,22 +4297,21 @@ async def on_message(message):
         try:
             with get_db() as conn:
                 cursor = conn.cursor()
-                if not is_afk_command:
+                cursor.execute(
+                    '''SELECT reason FROM guild_afk
+                       WHERE guild_id=? AND user_id=?''',
+                    (message.guild.id, message.author.id),
+                )
+                author_afk = cursor.fetchone()
+                if author_afk:
                     cursor.execute(
-                        '''SELECT reason FROM guild_afk
-                           WHERE guild_id=? AND user_id=?''',
+                        "DELETE FROM guild_afk WHERE guild_id=? AND user_id=?",
                         (message.guild.id, message.author.id),
                     )
-                    author_afk = cursor.fetchone()
-                    if author_afk:
-                        cursor.execute(
-                            "DELETE FROM guild_afk WHERE guild_id=? AND user_id=?",
-                            (message.guild.id, message.author.id),
-                        )
-                        afk_responses.append(
-                            f"Welcome back, **{message.author.display_name}**! "
-                            "Your AFK status has been removed."
-                        )
+                    afk_responses.append(
+                        f"Welcome back, **{message.author.display_name}**! "
+                        "Your AFK status has been removed."
+                    )
 
                 if mentioned_users:
                     placeholders = ",".join("?" for _ in mentioned_users)
@@ -4165,23 +4387,22 @@ async def on_message(message):
         # TODO: replace with a Jiwoo GIF link
         await message.channel.send("https://klipy.com/gifs/lee-jiwoo-jiwoo-triples")
 
-    # Process commands after checking for greetings
-    await bot.process_commands(message)
 
-@bot.event
-async def on_command_error(ctx, error):
-    """Global error handler for commands."""
-    if isinstance(error, commands.CommandNotFound):
-        return  # Ignore command not found errors
-    elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.reply(f"Missing required argument: {error.param.name}")
-    elif isinstance(error, commands.BadArgument):
-        await ctx.reply("Invalid argument provided. Please check your command.")
-    elif isinstance(error, commands.CommandOnCooldown):
-        await ctx.reply(f"This command is on cooldown. Try again in {error.retry_after:.1f} seconds.")
+@bot.tree.error
+async def on_app_command_error(interaction, error):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        message = (
+            f"This command is on cooldown. Try again in "
+            f"{error.retry_after:.1f} seconds."
+        )
     else:
-        print(f"Error in command {ctx.command}: {error}")
-        await ctx.reply("An unexpected error occurred. Please try again later.")
+        print(f"Error in slash command: {error}")
+        message = "An unexpected error occurred. Please try again later."
+
+    if interaction.response.is_done():
+        await interaction.followup.send(message, ephemeral=True)
+    else:
+        await interaction.response.send_message(message, ephemeral=True)
 
 # Run the bot with its token from the environment.
 if __name__ == "__main__":
