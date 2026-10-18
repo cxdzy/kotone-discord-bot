@@ -128,7 +128,11 @@ async def drop(ctx):
                     countdown_embed.description = (
                         f"{ctx.author.mention} has {seconds_remaining} seconds left to claim one card first."
                     )
-                    await drop_msg.edit(embed=countdown_embed, view=view)
+                    await drop_msg.edit(
+                        embed=countdown_embed,
+                        attachments=drop_msg.attachments,
+                        view=view,
+                    )
 
         countdown_task = asyncio.create_task(update_countdown())
         await view.wait()
@@ -143,7 +147,11 @@ async def drop(ctx):
             async with view.refresh_lock:
                 embed = drop_msg.embeds[0].copy()
                 embed.description = description
-                await drop_msg.edit(embed=embed, view=view)
+                await drop_msg.edit(
+                    embed=embed,
+                    attachments=drop_msg.attachments,
+                    view=view,
+                )
 
         # Check which cards are still available
         with get_db() as conn:

@@ -859,12 +859,18 @@ def create_card_image_file(cards):
             if len(image_data) > 10 * 1024 * 1024:
                 raise ValueError("image exceeds the 10 MiB download limit")
             image = Image.open(BytesIO(image_data)).convert("RGB")
-            image = ImageOps.fit(
+            image = ImageOps.contain(
                 image,
                 (card_width, card_height),
                 method=Image.Resampling.LANCZOS,
             )
-            canvas.paste(image, (x, 0))
+            canvas.paste(
+                image,
+                (
+                    x + (card_width - image.width) // 2,
+                    (card_height - image.height) // 2,
+                ),
+            )
         except (URLError, OSError, ValueError, Image.DecompressionBombError) as error:
             print(f"Could not load image for card {card['serial']}: {error}")
             draw = ImageDraw.Draw(canvas)
