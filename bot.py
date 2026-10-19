@@ -40,21 +40,6 @@ class KotoneBot(discord.Client):
         await self.tree.sync()
         print(f"Synced {len(self.tree.get_commands())} slash commands")
 
-    async def on_ready(self):
-        print(f"Logged in as {self.user} (ID: {self.user.id})")
-        await self.change_presence(
-            status=discord.Status.online,
-            activity=discord.Activity(
-                name="Andless",
-                type=discord.ActivityType.listening,
-                details="YouTube",
-                details_url="https://www.youtube.com/watch?v=uqJ6GDJSyfY",
-                state="Spotify",
-                state_url="https://open.spotify.com/track/54E6zLaoW4ofXKaXhLVu3G",
-            ),
-        )
-
-
 bot = KotoneBot()
 SLASH_COMMANDS = {}
 SLASH_COMMAND_ALIASES = {}
@@ -1679,6 +1664,17 @@ class InventoryView(View):
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guilds')
+    await bot.change_presence(
+        status=discord.Status.online,
+        activity=discord.Activity(
+            name="Andless",
+            type=discord.ActivityType.listening,
+            details="YouTube",
+            details_url="https://www.youtube.com/watch?v=uqJ6GDJSyfY",
+            state="Spotify",
+            state_url="https://open.spotify.com/track/54E6zLaoW4ofXKaXhLVu3G",
+        ),
+    )
     if not cooldown_reminder_loop.is_running():
         cooldown_reminder_loop.start()
 
