@@ -40,6 +40,20 @@ class KotoneBot(discord.Client):
         await self.tree.sync()
         print(f"Synced {len(self.tree.get_commands())} slash commands")
 
+    async def on_ready(self):
+        print(f"Logged in as {self.user} (ID: {self.user.id})")
+        await self.change_presence(
+            status=discord.Status.online,
+            activity=discord.Activity(
+                name="Andless",
+                type=discord.ActivityType.listening,
+                details="YouTube",
+                details_url="https://www.youtube.com/watch?v=uqJ6GDJSyfY",
+                state="Spotify",
+                state_url="https://open.spotify.com/track/54E6zLaoW4ofXKaXhLVu3G",
+            ),
+        )
+
 
 bot = KotoneBot()
 SLASH_COMMANDS = {}
