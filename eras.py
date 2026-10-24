@@ -76,7 +76,7 @@ ERAS = {
                     "Common": "https://gejzwuqlkaggzdmbgdsd.supabase.co/storage/v1/object/public/kotone%20bot/assemble%20jhr%20c.png",
                     "Rare": "https://gejzwuqlkaggzdmbgdsd.supabase.co/storage/v1/object/public/kotone%20bot/assemble-hyerin-r.png",
                     "Epic": "https://gejzwuqlkaggzdmbgdsd.supabase.co/storage/v1/object/public/kotone%20bot/hyerin%20assemble%20epic.png",
-                    "Legendary": "file:///C:/Users/DAEYEYO/Pictures/tripleS%20card/Legendary/hyerin-AAA-legendary-preview.png",
+                    "Legendary": "https://gejzwuqlkaggzdmbgdsd.supabase.co/storage/v1/object/public/kotone%20bot/hyerin-AAA-legendary-preview.png",
                     "Mythic": "https://media.discordapp.net/attachments/1335162578246041680/1559917581484302366/5bb48508-dd83-4c61-a0ed-8029bcff3cd6.png?ex=6ad0d1f5&is=6acf8075&hm=f8c6e26aae76d7531d714cdad1f2472a2544294532b97352d25ac0959fe1946a&=&format=webp&quality=lossless"
                 },
                 "animated_images": {"Legendary": "https://gejzwuqlkaggzdmbgdsd.supabase.co/storage/v1/object/public/kotone%20bot/hyerin-AAA-legendary.gif"},
