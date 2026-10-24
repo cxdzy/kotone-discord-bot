@@ -1,0 +1,18 @@
+.git
+.gitignore
+.gitattributes
+.github/
+.env
+.env.*
+!.env.example
+Token.txt
+__pycache__/
+*.pyc
+.venv/
+venv/
+kpop_cards.db*
+data/
+Dockerfile
+.dockerignore
+compose.yml
+Start Bot.bat

@@ -1,0 +1,29 @@
+name: kotone-bot
+
+services:
+  bot:
+    container_name: kotone-bot
+    build: .
+    image: kotone-bot:latest
+    restart: unless-stopped
+    mem_limit: 384m
+    security_opt:
+      - "no-new-privileges:true"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    env_file: .env
+    volumes:
+      - kotone-bot-data:/app/data
+    networks:
+      - kotone-bot-net
+
+volumes:
+  kotone-bot-data:
+    name: kotone-bot-data
+
+networks:
+  kotone-bot-net:
+    name: kotone-bot-net
