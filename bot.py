@@ -832,7 +832,7 @@ def get_card_image(era, member_code, rarity, animated=False):
         images = member["images"]
         if animated:
             animated_image = member.get("animated_images", {}).get(rarity)
-            if animated_image:
+            if animated_image and "example.com" not in animated_image:
                 return animated_image
         if rarity == "Mythic" and rarity not in images:
             return images["Legendary"]
