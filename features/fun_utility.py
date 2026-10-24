@@ -1,4 +1,5 @@
 from bot import *
+from typing import Literal
 
 minigame_group = app_commands.Group(
     name="minigame",
@@ -20,24 +21,34 @@ async def eight_ball(ctx, *, question):
         "Very doubtful."
     ]
     await ctx.reply(
-        f"🎱 **You asked:** {question}\n"
-        f"**The 8-ball says:** {random.choice(responses)}"
+        f"({question}) – {random.choice(responses)}",
+        allowed_mentions=discord.AllowedMentions.none(),
     )
 
 
 @slash_command(name='choose')
-async def choose(ctx, *, options):
-    """Choose between multiple options (separate with 'or')."""
-    if ' or ' not in options:
-        await ctx.reply("Please provide options separated by 'or' (e.g., `/choose` with `pizza or burger or pasta`).")
-        return
-
-    choices = [option.strip() for option in options.split(' or ')]
+async def choose(
+    ctx,
+    option1: str,
+    option2: str,
+    option3: str = None,
+    option4: str = None,
+    option5: str = None,
+):
+    """Choose between two to five options."""
+    choices = [
+        option.strip()
+        for option in (option1, option2, option3, option4, option5)
+        if option and option.strip()
+    ]
     if len(choices) < 2:
-        await ctx.reply("Please provide at least two options separated by 'or'")
+        await ctx.reply("Please provide at least two non-empty options.")
         return
 
-    await ctx.reply(f"{random.choice(choices)}!")
+    await ctx.reply(
+        f"({' or '.join(choices)}) – {random.choice(choices)}!",
+        allowed_mentions=discord.AllowedMentions.none(),
+    )
 
 
 @slash_command(name="list", group=minigame_group)
@@ -128,18 +139,21 @@ async def profile(ctx, user: discord.Member = None):
 
 
 @slash_command(name='bio')
-async def bio_command(ctx, *, query: str = ""):
+async def bio_command(
+    ctx,
+    action: Literal["set", "clear"],
+    bio: str = None,
+):
     """Set or clear your profile bio."""
-    action, _, bio = query.strip().partition(" ")
-    if action.casefold() == "clear":
+    if action == "clear":
         with get_db() as conn:
             c = conn.cursor()
             c.execute("DELETE FROM user_bios WHERE user_id=?", (ctx.author.id,))
         await ctx.reply("Your profile bio has been cleared.")
         return
 
-    if action.casefold() != "set" or not bio.strip():
-        await ctx.reply("Use `/bio` with `set <your bio>` or `clear`.")
+    if bio is None or not bio.strip():
+        await ctx.reply("Provide the bio text when choosing `set`.")
         return
 
     bio = bio.strip()
@@ -352,20 +366,12 @@ async def cooldown(ctx):
 
 
 @slash_command(name='remind', aliases=('reminder', 'reminders'))
-async def cooldown_reminders(ctx, *, options: str = ""):
+async def cooldown_reminders(
+    ctx,
+    cooldown_type: Literal["daily", "weekly", "drop", "spin", "claim", "all"] = None,
+    enabled: bool = True,
+):
     """Choose which cooldown resets should be sent to you by DM."""
-    parts = options.casefold().split()
-    if parts:
-        if parts[0] != "all" and parts[0] not in COOLDOWN_REMINDER_TYPES:
-            await ctx.reply(
-                "Choose `daily`, `weekly`, `drop`, `spin`, `claim`, or `all`."
-            )
-            return
-        if len(parts) > 2 or (len(parts) == 2 and parts[1] not in {"on", "off"}):
-            await ctx.reply(
-                "Use `/remind` with `<daily|weekly|drop|spin|claim|all> [on|off]`."
-            )
-            return
     now = time.time()
 
     try:
@@ -381,14 +387,12 @@ async def cooldown_reminders(ctx, *, options: str = ""):
                 ),
             )
 
-            if parts:
-                cooldown_type = parts[0]
+            if cooldown_type is not None:
                 if cooldown_type == "all":
                     selected_types = list(COOLDOWN_REMINDER_TYPES)
                 else:
                     selected_types = [cooldown_type]
 
-                enabled = len(parts) == 1 or parts[1] == "on"
                 for selected_type in selected_types:
                     expires_at = None
                     if enabled:
@@ -427,13 +431,13 @@ async def cooldown_reminders(ctx, *, options: str = ""):
         f"**{label}:** {'On' if settings.get(cooldown_type, 0) else 'Off'}"
         for cooldown_type, (label, _) in COOLDOWN_REMINDER_TYPES.items()
     )
-    if parts:
+    if cooldown_type is not None:
         changed_types = (
             list(COOLDOWN_REMINDER_TYPES)
-            if parts[0] == "all"
-            else [parts[0]]
+            if cooldown_type == "all"
+            else [cooldown_type]
         )
-        state = "enabled" if len(parts) == 1 or parts[1] == "on" else "disabled"
+        state = "enabled" if enabled else "disabled"
         changed_labels = ", ".join(
             COOLDOWN_REMINDER_TYPES[cooldown_type][0]
             for cooldown_type in changed_types
@@ -445,9 +449,7 @@ async def cooldown_reminders(ctx, *, options: str = ""):
         await ctx.reply(
             "Cooldown reminder settings (sent by DM):\n"
             f"{settings_text}\n\n"
-            "Use `/remind` with `daily` to enable one, "
-            "`spin` to enable the daily spin reset reminder, "
-            "or `all on/off`."
+            "Choose a cooldown and set `enabled` to on or off to change a reminder."
         )
 
 

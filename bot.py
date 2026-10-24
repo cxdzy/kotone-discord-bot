@@ -11,6 +11,7 @@ import os
 import sys
 import re
 import ctypes
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from types import SimpleNamespace
 from urllib.error import URLError
@@ -825,9 +826,14 @@ def generate_unique_cards(count=3, target=None, rarity_boost=False):
     return cards
 
 # Get image URL for a card
-def get_card_image(era, member_code, rarity):
+def get_card_image(era, member_code, rarity, animated=False):
     try:
-        images = ERAS[era]["members"][member_code]["images"]
+        member = ERAS[era]["members"][member_code]
+        images = member["images"]
+        if animated:
+            animated_image = member.get("animated_images", {}).get(rarity)
+            if animated_image:
+                return animated_image
         if rarity == "Mythic" and rarity not in images:
             return images["Legendary"]
         return images[rarity]
@@ -893,22 +899,19 @@ COLLECTION_MEMBERS_PER_PAGE = 12
 def create_collection_image_file(era, rarity, owned_member_codes, page=0):
     """Create a rarity-specific era collection collage with missing cards dimmed."""
     members = list(ERAS[era]["members"].items())
-    if era == "ASSEMBLE24":
+    if era in {"ASSEMBLE24", "VV"}:
         start = page * COLLECTION_MEMBERS_PER_PAGE
         members = members[start:start + COLLECTION_MEMBERS_PER_PAGE]
     card_width, card_height = 194, 300
     gap = 10
-    columns = min(6 if era == "ASSEMBLE24" else 5, len(members))
+    columns = min(6 if era in {"ASSEMBLE24", "VV"} else 5, len(members))
     rows = (len(members) + columns - 1) // columns
     canvas_width = columns * card_width + (columns - 1) * gap
     canvas_height = rows * card_height + (rows - 1) * gap
     canvas = Image.new("RGB", (canvas_width, canvas_height), (35, 35, 45))
 
-    for index, (member_code, _) in enumerate(members):
-        column = index % columns
-        row = index // columns
-        x = column * (card_width + gap)
-        y = row * (card_height + gap)
+    def load_member_image(member):
+        member_code, _ = member
         try:
             request = Request(
                 get_card_image(era, member_code, rarity),
@@ -936,25 +939,41 @@ def create_collection_image_file(era, rarity, owned_member_codes, page=0):
                     (card_height - image.height) // 2,
                 ),
             )
+            return card_image, None
         except (URLError, OSError, ValueError, Image.DecompressionBombError) as error:
-            print(f"Could not load collection image for {member_code}: {error}")
-            card_image = Image.new(
-                "RGB",
-                (card_width, card_height),
-                (65, 65, 75),
-            )
-            ImageDraw.Draw(card_image).text(
-                (12, card_height // 2),
-                "Image unavailable",
-                fill="white",
-            )
+            return None, error
 
-        if member_code not in owned_member_codes:
-            muted = ImageOps.grayscale(card_image).convert("RGB")
-            overlay = Image.new("RGB", muted.size, (25, 25, 30))
-            card_image = Image.blend(muted, overlay, 0.62)
+    worker_count = min(6, len(members))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        image_results = executor.map(load_member_image, members)
+        for index, ((member_code, _), (card_image, error)) in enumerate(
+            zip(members, image_results)
+        ):
+            column = index % columns
+            row = index // columns
+            x = column * (card_width + gap)
+            y = row * (card_height + gap)
+            if error:
+                print(
+                    f"Could not load collection image for {member_code}: {error}"
+                )
+                card_image = Image.new(
+                    "RGB",
+                    (card_width, card_height),
+                    (65, 65, 75),
+                )
+                ImageDraw.Draw(card_image).text(
+                    (12, card_height // 2),
+                    "Image unavailable",
+                    fill="white",
+                )
 
-        canvas.paste(card_image, (x, y))
+            if member_code not in owned_member_codes:
+                muted = ImageOps.grayscale(card_image).convert("RGB")
+                overlay = Image.new("RGB", muted.size, (25, 25, 30))
+                card_image = Image.blend(muted, overlay, 0.62)
+
+            canvas.paste(card_image, (x, y))
 
     image_buffer = BytesIO()
     canvas.save(image_buffer, format="JPEG", quality=88)
@@ -1124,7 +1143,14 @@ class ClaimButton(Button):
                             [claimed_card],
                             show_full_name=True,
                         )
-                        claimed_embed.set_image(url=get_card_image(era, member_code, rarity))
+                        claimed_embed.set_image(
+                            url=get_card_image(
+                                era,
+                                member_code,
+                                rarity,
+                                animated=True,
+                            )
+                        )
                         await interaction.followup.send(
                             embed=claimed_embed,
                         )
@@ -1333,6 +1359,7 @@ class SpinView(View):
                         reward_card["era"],
                         reward_card["member_code"],
                         reward_card["rarity"],
+                        animated=True,
                     )
                 )
             for index, button in enumerate(self.children):
@@ -1588,27 +1615,69 @@ class SpinConfirmationView(View):
 
 
 class InventoryView(View):
-    def __init__(self, cards, user_display_name, ctx):
+    def __init__(
+        self,
+        cards,
+        user_display_name,
+        ctx,
+        selected_member_codes=None,
+        filter_labels=None,
+    ):
         super().__init__(timeout=180)  # 3 minute timeout
         self.cards = cards
         self.user_display_name = user_display_name
         self.ctx = ctx
+        self.selected_member_codes = set(selected_member_codes or ())
+        self.filter_labels = filter_labels or []
         self.current_page = 0
         self.items_per_page = 5
-        self.total_pages = (len(cards) + self.items_per_page - 1) // self.items_per_page
-        
-        # Update button states
+        member_select = InventoryMemberSelect(self)
+        if member_select.options:
+            self.add_item(member_select)
         self.update_buttons()
-    
+
+    def get_filtered_cards(self):
+        if not self.selected_member_codes:
+            return self.cards
+        return [
+            card for card in self.cards
+            if card[1] in self.selected_member_codes
+        ]
+
     def update_buttons(self):
-        # Disable/enable buttons based on current page
-        self.children[0].disabled = self.current_page == 0  # Previous button
-        self.children[1].disabled = self.current_page >= self.total_pages - 1  # Next button
-    
+        filtered_cards = self.get_filtered_cards()
+        self.total_pages = max(
+            1,
+            (len(filtered_cards) + self.items_per_page - 1)
+            // self.items_per_page,
+        )
+        for child in self.children:
+            if isinstance(child, Button) and child.label == "◀ Previous":
+                child.disabled = self.current_page == 0
+            elif isinstance(child, Button) and child.label == "Next ▶":
+                child.disabled = self.current_page >= self.total_pages - 1
+
     def get_embed(self):
+        filtered_cards = self.get_filtered_cards()
+        filter_labels = list(self.filter_labels)
+        if self.selected_member_codes:
+            member_names = [
+                S_MEMBERS[member_code]["name"]
+                for member_code in S_ORDER
+                if member_code in self.selected_member_codes
+            ]
+            filter_labels.append("members " + ", ".join(member_names))
+        filter_description = (
+            " • Filters: " + ", ".join(filter_labels)
+            if filter_labels
+            else ""
+        )
         embed = discord.Embed(
             title=f"{self.user_display_name}'s Inventory",
-            description=f"Page {self.current_page + 1}/{self.total_pages} • Total Cards: {len(self.cards)}",
+            description=(
+                f"Page {self.current_page + 1}/{self.total_pages} • "
+                f"Total Cards: {len(filtered_cards)}{filter_description}"
+            ),
             color=0xff6b8b
         )
         inventory_owner = self.ctx.author
@@ -1620,10 +1689,13 @@ class InventoryView(View):
         )
         
         start_idx = self.current_page * self.items_per_page
-        end_idx = min((self.current_page + 1) * self.items_per_page, len(self.cards))
+        end_idx = min(
+            (self.current_page + 1) * self.items_per_page,
+            len(filtered_cards),
+        )
         
         for i in range(start_idx, end_idx):
-            serial, member_code, era, rarity, obtained_at = self.cards[i]
+            serial, member_code, era, rarity, obtained_at = filtered_cards[i]
             
             try:
                 member_name = ERAS[era]['members'][member_code]['name']
@@ -1637,7 +1709,14 @@ class InventoryView(View):
                 value=f"Member: {member_name}\nEra: {era_name}\nRarity: {rarity}\nObtained: {obtained_at[:10] if obtained_at else 'Unknown'}",
                 inline=False
             )
-            
+
+        if not filtered_cards:
+            embed.add_field(
+                name="No matching cards",
+                value="You don't have cards matching the selected filters.",
+                inline=False,
+            )
+
         return embed
     
     @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.primary)
@@ -1659,6 +1738,45 @@ class InventoryView(View):
         self.current_page += 1
         self.update_buttons()
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+
+class InventoryMemberSelect(discord.ui.Select):
+    def __init__(self, inventory_view):
+        self.inventory_view = inventory_view
+        selected_codes = inventory_view.selected_member_codes
+        options = [
+            discord.SelectOption(
+                label=member_data["name"],
+                value=member_code,
+                default=member_code in selected_codes,
+            )
+            for member_code, member_data in S_MEMBERS.items()
+        ]
+        super().__init__(
+            placeholder="Filter by one or more members",
+            min_values=0,
+            max_values=len(options),
+            options=options,
+            row=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.inventory_view.ctx.author.id:
+            await interaction.response.send_message(
+                "Only the person who opened this inventory can change its filters.",
+                ephemeral=True,
+            )
+            return
+
+        self.inventory_view.selected_member_codes = set(self.values)
+        for option in self.options:
+            option.default = option.value in self.inventory_view.selected_member_codes
+        self.inventory_view.current_page = 0
+        self.inventory_view.update_buttons()
+        await interaction.response.edit_message(
+            embed=self.inventory_view.get_embed(),
+            view=self.inventory_view,
+        )
 
 @bot.event
 async def on_ready():
@@ -1862,7 +1980,12 @@ class MergeConfirmationView(View):
             show_full_name=True,
         )
         result_embed.set_image(
-            url=get_card_image(era, member_code, rarity)
+            url=get_card_image(
+                era,
+                member_code,
+                rarity,
+                animated=True,
+            )
         )
         await interaction.followup.send(embed=result_embed)
         self.stop()
@@ -1966,7 +2089,7 @@ class CollectionView(View):
                 + COLLECTION_MEMBERS_PER_PAGE
                 - 1
             ) // COLLECTION_MEMBERS_PER_PAGE
-            if era == "ASSEMBLE24"
+            if era in {"ASSEMBLE24", "VV"}
             else 1
         )
         self.update_buttons()

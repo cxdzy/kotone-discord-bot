@@ -1,4 +1,6 @@
 from bot import *
+from typing import Literal
+from io import BytesIO
 
 @slash_command(name='drop')
 async def drop(ctx):
@@ -103,6 +105,13 @@ async def drop(ctx):
             cards,
         )
         drop_image = await create_drop_embed_image(cards)
+        drop_image_data = drop_image.fp.getvalue()
+
+        def create_drop_image_attachment():
+            return discord.File(
+                BytesIO(drop_image_data),
+                filename=DROP_CARD_IMAGE_FILENAME,
+            )
 
         # Create view with buttons for dropper
         view = View(timeout=30)
@@ -119,18 +128,22 @@ async def drop(ctx):
         drop_msg = await ctx.send(embed=embed, file=drop_image, view=view)
 
         async def update_countdown():
+            nonlocal drop_msg
             for seconds_remaining in range(25, -1, -5):
                 await asyncio.sleep(5)
                 if view.is_finished():
                     return
                 async with view.refresh_lock:
                     countdown_embed = drop_msg.embeds[0].copy()
+                    countdown_embed.set_image(
+                        url=f"attachment://{DROP_CARD_IMAGE_FILENAME}"
+                    )
                     countdown_embed.description = (
                         f"{ctx.author.mention} has {seconds_remaining} seconds left to claim one card first."
                     )
-                    await drop_msg.edit(
+                    drop_msg = await drop_msg.edit(
                         embed=countdown_embed,
-                        attachments=drop_msg.attachments,
+                        attachments=[create_drop_image_attachment()],
                         view=view,
                     )
 
@@ -146,10 +159,11 @@ async def drop(ctx):
             description = "The first-claim window expired. The remaining cards are open to everyone."
             async with view.refresh_lock:
                 embed = drop_msg.embeds[0].copy()
+                embed.set_image(url=f"attachment://{DROP_CARD_IMAGE_FILENAME}")
                 embed.description = description
-                await drop_msg.edit(
+                drop_msg = await drop_msg.edit(
                     embed=embed,
-                    attachments=drop_msg.attachments,
+                    attachments=[create_drop_image_attachment()],
                     view=view,
                 )
 
@@ -364,37 +378,22 @@ async def merge_cards(ctx, *, card_serials: str = ""):
 
 
 @slash_command(name='collection')
-async def collection(ctx, *, query: str = ""):
+async def collection(
+    ctx,
+    era: Literal["AAA", "ASSEMBLE", "ASSEMBLE24", "KRE", "VV"],
+    rarity: Literal["Common", "Rare", "Epic", "Legendary", "Mythic"] = "Common",
+):
     """Show your owned cards for one era, with rarity filters."""
-    parts = query.strip().split()
-    if not parts:
-        await ctx.reply(
-            "Choose an era, optionally with a rarity. Example: "
-            "`/collection` with `ASSEMBLE rare`."
-        )
-        return
-
-    rarity_lookup = {rarity.casefold(): rarity for rarity in RARITIES}
-    selected_rarities = [
-        rarity_lookup[part.casefold()]
-        for part in parts
-        if part.casefold() in rarity_lookup
-    ]
-    if len(selected_rarities) > 1:
-        await ctx.reply("Choose only one rarity for your collection.")
-        return
-    rarity = selected_rarities[0] if selected_rarities else "Common"
-    era_parts = [
-        part for part in parts if part.casefold() not in rarity_lookup
-    ]
-    era = ERA_ALIAS_LOOKUP.get(normalize_era_alias(" ".join(era_parts)))
+    era_name = era.strip()
+    era = ERA_ALIAS_LOOKUP.get(normalize_era_alias(era_name))
     if era is None or era not in ERAS:
         available_eras = ", ".join(
             f"{ERAS[era_key]['name']} ({aliases[1]})"
             for era_key, aliases in ERA_ALIASES.items()
         )
         await ctx.reply(
-            f"I couldn't identify that era. Available eras: {available_eras}."
+            f"I couldn't identify `{era_name}` as an era. "
+            f"Available eras: {available_eras}."
         )
         return
 
@@ -445,11 +444,31 @@ async def collection(ctx, *, query: str = ""):
 
 
 @slash_command(name='inventory', aliases=('inv',))
-async def inventory(ctx, user: discord.Member = None, *, query: str = ""):
-    """View and filter your card inventory or another user's."""
+async def inventory(
+    ctx,
+    user: discord.Member = None,
+    era: Literal["AAA", "ASSEMBLE", "ASSEMBLE24", "KRE", "VV"] = None,
+    rarity: Literal["Common", "Rare", "Epic", "Legendary", "Mythic"] = None,
+    member: Literal[
+        "Seoyeon", "Hyerin", "Jiwoo", "Chaeyeon", "Yooyeon", "Soomin",
+        "Nakyoung", "Yubin", "Kaede", "Dahyun", "Kotone", "Yeonji",
+        "Nien", "Sohyun", "Xinyu", "Mayu", "Lynn", "Joobin", "Hayeon",
+        "Shion", "Chaewon", "Sullin", "Seoah", "Jiyeon",
+    ] = None,
+):
+    """View cards, or filter by era, rarity, and one or more members."""
     user = user or ctx.author
-    query = query.strip()
-    search_terms = query.casefold().replace(',', ' ').split()
+    member_codes = {
+        member_code
+        for member_code, member_data in S_MEMBERS.items()
+        if member
+        and member_data["name"].casefold() == member.casefold()
+    }
+    filter_labels = []
+    if era:
+        filter_labels.append(f"era {era}")
+    if rarity:
+        filter_labels.append(f"rarity {rarity}")
     user_id = user.id
 
     try:
@@ -461,41 +480,25 @@ async def inventory(ctx, user: discord.Member = None, *, query: str = ""):
                          FROM cards
                          WHERE owner_id=?
                          ORDER BY obtained_at DESC''', (user_id,))
-            cards = c.fetchall()
+            cards = [
+                card
+                for card in c.fetchall()
+                if (era is None or card[2] == era)
+                and (rarity is None or card[3] == rarity)
+            ]
 
-        if search_terms:
-            filtered_cards = []
-            for card in cards:
-                _, member_code, era, rarity, _ = card
-                member_data = ERAS.get(era, {}).get('members', {}).get(member_code, {})
-                s_number = (
-                    S_ORDER.index(member_code) + 1
-                    if member_code in S_ORDER
-                    else None
-                )
-                search_text = ' '.join((
-                    member_code,
-                    f"s{s_number}" if s_number is not None else "",
-                    era,
-                    rarity,
-                    member_data.get('name', ''),
-                    member_data.get('full_name', ''),
-                )).casefold()
-                if all(term in search_text for term in search_terms):
-                    filtered_cards.append(card)
-            cards = filtered_cards
-
-        if not cards:
-            if search_terms:
-                await ctx.reply(
-                    f"No cards in {user.display_name}'s inventory match `{query}`."
-                )
-                return
+        if not cards and not (era or rarity or member):
             await ctx.reply(f"{user.display_name} doesn't have any cards yet!")
             return
 
         # Create paginated view
-        view = InventoryView(cards, user.display_name, ctx)
+        view = InventoryView(
+            cards,
+            user.display_name,
+            ctx,
+            selected_member_codes=member_codes,
+            filter_labels=filter_labels,
+        )
         embed = view.get_embed()
 
         await ctx.reply(embed=embed, view=view)
@@ -550,7 +553,12 @@ async def view_card(ctx, serial: str):
         try:
             full_name = ERAS[era]['members'][member_code]['full_name']
             era_name = ERAS[era]['name']
-            image_url = get_card_image(era, member_code, rarity)
+            image_url = get_card_image(
+                era,
+                member_code,
+                rarity,
+                animated=True,
+            )
         except KeyError:
             await ctx.reply("Card data corrupted!")
             return
@@ -660,59 +668,54 @@ async def give_card(ctx, recipient: discord.Member, serial: str):
 
 
 @slash_command(name='target')
-async def target_command(ctx, *, query: str = ""):
-    """Set or clear the member/rarity/era you want to target."""
-    query = query.strip()
-    if query.casefold() in {"clear", "off", "none"}:
+async def target_command(
+    ctx,
+    member: Literal[
+        "Seoyeon", "Hyerin", "Jiwoo", "Chaeyeon", "Yooyeon", "Soomin",
+        "Nakyoung", "Yubin", "Kaede", "Dahyun", "Kotone", "Yeonji",
+        "Nien", "Sohyun", "Xinyu", "Mayu", "Lynn", "Joobin", "Hayeon",
+        "Shion", "Chaewon", "Sullin", "Seoah", "Jiyeon",
+    ] = None,
+    rarity: Literal["Common", "Rare", "Epic", "Legendary", "Mythic"] = None,
+    era: Literal["AAA", "ASSEMBLE", "ASSEMBLE24", "KRE", "VV"] = None,
+    clear: bool = False,
+):
+    """Set a member target with optional rarity/era filters, or clear it."""
+    member_query = " ".join(member.casefold().split()) if member else ""
+    if clear:
+        if member_query or rarity or era:
+            await ctx.reply(
+                "Use `clear` by itself, or provide a member and optional filters to set a target."
+            )
+            return
         with get_db() as conn:
             c = conn.cursor()
             c.execute("DELETE FROM user_targets WHERE user_id=?", (ctx.author.id,))
         await ctx.reply("Your card target has been cleared.")
         return
 
-    if not query:
+    if not member_query:
+        if rarity or era:
+            await ctx.reply("Choose a member when setting a rarity or era target.")
+            return
         current_target = get_user_target(ctx.author.id)
         if current_target:
             await ctx.reply(
                 f"Your current target is **{format_target(current_target)}**. "
-                "Use `/target` with `clear` to remove it."
+                "Set a new member to update it, or enable `clear` to remove it."
             )
         else:
             await ctx.reply(
-                "Set a target with `/target` and a member, optionally adding a rarity "
-                "and/or era (for example, `rare jiwoo`)."
+                "Set a member, with optional rarity and era filters, or enable `clear`."
             )
         return
-
-    tokens = query.casefold().split()
-    rarity = next(
-        (name for name in RARITIES if name.casefold() in tokens),
-        None,
-    )
-    era = next(
-        (
-            era_code for era_code, era_data in ERAS.items()
-            if era_code.casefold() in tokens
-            or era_data["name"].casefold() in tokens
-        ),
-        None,
-    )
-    member_query = " ".join(
-        token for token in tokens
-        if token not in {
-            *(name.casefold() for name in RARITIES),
-            *(era_code.casefold() for era_code in ERAS),
-            *(era_data["name"].casefold() for era_data in ERAS.values()),
-        }
-    ).strip()
-    normalized_member_query = " ".join(member_query.split())
 
     matching_members = {
         (era_code, member_code)
         for era_code, era_data in ERAS.items()
         for member_code, member_data in era_data["members"].items()
         if (era is None or era_code == era)
-        and normalized_member_query in {
+        and member_query in {
             member_code.casefold(),
             member_data["name"].casefold(),
             member_data["full_name"].casefold(),
@@ -720,7 +723,7 @@ async def target_command(ctx, *, query: str = ""):
     }
 
     member_codes = {member_code for _, member_code in matching_members}
-    if not normalized_member_query or not member_codes:
+    if not member_query or not member_codes:
         await ctx.reply(
             "I couldn't find that member. Try their short name, full name, or member code."
         )
@@ -753,32 +756,41 @@ async def target_command(ctx, *, query: str = ""):
 
 
 @slash_command(name='bias')
-async def bias_command(ctx, *, query: str = ""):
+async def bias_command(ctx, members: str = None, clear: bool = False):
     """Set or clear the members shown as your profile biases."""
-    query = query.strip()
-    if not query:
-        await ctx.reply(
-            "Set your biases with `/bias` and `set jiwoo seoyeon yooyeon`, "
-            "or clear them with `/bias` and `clear`."
-        )
-        return
-
-    action, _, names = query.partition(" ")
-    if action.casefold() in {"clear", "off", "none"}:
+    members = members.strip() if members else ""
+    if clear:
+        if members:
+            await ctx.reply("Use `clear` by itself, or provide members to replace your biases.")
+            return
         with get_db() as conn:
             c = conn.cursor()
             c.execute("DELETE FROM user_biases WHERE user_id=?", (ctx.author.id,))
         await ctx.reply("Your profile biases have been cleared.")
         return
 
-    if action.casefold() != "set" or not names.strip():
+    if not members:
+        with get_db() as conn:
+            c = conn.cursor()
+            c.execute(
+                "SELECT member_code FROM user_biases WHERE user_id=?",
+                (ctx.author.id,),
+            )
+            current_codes = {row[0] for row in c.fetchall()}
+        current_names = [
+            S_MEMBERS[code]["name"]
+            for code in S_ORDER
+            if code in current_codes
+        ]
         await ctx.reply(
-            "Use `/bias` with `set <member names>` or `clear`."
+            f"Your current profile biases: {', '.join(current_names)}."
+            if current_names
+            else "You haven't set any profile biases yet. Provide member names to set them."
         )
         return
 
     try:
-        bias_codes = parse_biases(names)
+        bias_codes = parse_biases(members)
     except ValueError as error:
         await ctx.reply(str(error))
         return
