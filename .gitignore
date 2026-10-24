@@ -2,3 +2,6 @@
 Token.txt
 __pycache__/
 .venv/
+venv/
+kpop_cards.db
+kpop_cards.db-*
