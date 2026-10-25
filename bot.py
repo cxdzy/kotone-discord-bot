@@ -2022,6 +2022,7 @@ def create_collection_embed(
     total_count,
     page=1,
     total_pages=1,
+    spare_count=0,
 ):
     embed = discord.Embed(
         description=(
@@ -2048,6 +2049,17 @@ def create_collection_embed(
         footer = (
             f"You are missing {total_count - owned_count} cards. "
             "Keep playing!"
+        )
+    if spare_count:
+        embed.add_field(
+            name="Duplicates",
+            value=(
+                f"You have **{spare_count} spare {rarity} "
+                f"{'card' if spare_count == 1 else 'cards'}**. "
+                f"Use `/dupes era:{era} rarity:{rarity}` to view their "
+                "serials."
+            ),
+            inline=False,
         )
     embed.set_footer(text=footer)
     embed.set_image(url=f"attachment://{COLLECTION_IMAGE_FILENAME}")
@@ -2086,11 +2098,19 @@ class CollectionPageButton(Button):
 
 
 class CollectionView(View):
-    def __init__(self, user, era, owned_by_rarity, default_rarity):
+    def __init__(
+        self,
+        user,
+        era,
+        owned_by_rarity,
+        default_rarity,
+        spare_by_rarity=None,
+    ):
         super().__init__(timeout=180)
         self.user = user
         self.era = era
         self.owned_by_rarity = owned_by_rarity
+        self.spare_by_rarity = spare_by_rarity or {}
         self.message = None
         self.selected_rarity = default_rarity
         self.current_page = 0
@@ -2167,6 +2187,7 @@ class CollectionView(View):
                 len(ERAS[self.era]["members"]),
                 self.current_page + 1,
                 self.total_pages,
+                self.spare_by_rarity.get(self.selected_rarity, 0),
             )
             self.update_buttons()
             await interaction.edit_original_response(
@@ -2255,8 +2276,8 @@ HELP_CATEGORIES = (
     (
         "🎴 Cards",
         (
-            "drop", "spin", "inventory", "view", "merge", "collection", "give",
-            "target", "bias", "bio", "profile", "stats",
+            "drop", "spin", "inventory", "view", "merge", "collection", "dupes",
+            "give", "target", "bias", "bio", "profile", "stats",
         ),
     ),
     ("🏪 Market", ("market", "list", "unlist", "buy")),

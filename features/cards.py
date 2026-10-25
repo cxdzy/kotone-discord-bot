@@ -406,15 +406,29 @@ async def collection(
                 (ctx.author.id, era),
             )
             owned_by_rarity = {name: set() for name in RARITIES}
+            copies_by_rarity = {name: {} for name in RARITIES}
             for member_code, card_rarity in c.fetchall():
                 if card_rarity in owned_by_rarity:
                     owned_by_rarity[card_rarity].add(member_code)
+                    rarity_counts = copies_by_rarity[card_rarity]
+                    rarity_counts[member_code] = (
+                        rarity_counts.get(member_code, 0) + 1
+                    )
 
+        spare_by_rarity = {
+            rarity_name: sum(
+                count - 1
+                for count in member_counts.values()
+                if count > 1
+            )
+            for rarity_name, member_counts in copies_by_rarity.items()
+        }
         view = CollectionView(
             ctx.author,
             era,
             owned_by_rarity,
             rarity,
+            spare_by_rarity,
         )
         embed = create_collection_embed(
             ctx.author,
@@ -424,6 +438,7 @@ async def collection(
             len(ERAS[era]["members"]),
             1,
             view.total_pages,
+            spare_by_rarity.get(rarity, 0),
         )
         image = await create_collection_embed_image(
             era,
@@ -441,6 +456,549 @@ async def collection(
     except Exception as error:
         print(f"Error while creating collection: {error}")
         await ctx.reply("An error occurred while creating your collection.")
+
+
+DUPLICATE_GROUPS_PER_PAGE = 10
+DUPLICATE_COPIES_PER_FIELD = 15
+DUPLICATE_SERIALS_PER_FIELD = 50
+
+
+def get_duplicate_group_names(group):
+    era_data = ERAS.get(group["era"], {})
+    era_name = era_data.get("name", group["era"])
+    member_name = (
+        era_data.get("members", {})
+        .get(group["member_code"], {})
+        .get("name", group["member_code"])
+    )
+    return era_name, member_name
+
+
+def get_duplicate_group_key(group):
+    return f"{group['era']}|{group['member_code']}|{group['rarity']}"
+
+
+def count_ready_spares(group):
+    return max(0, group["copies"] - group["listed"] - 1)
+
+
+def pluralize(count, singular, plural=None):
+    if count == 1:
+        return singular
+    return plural or f"{singular}s"
+
+
+def fetch_duplicate_groups(user_id, era=None, rarity=None, member_codes=None):
+    query = '''
+        SELECT c.era, c.member_code, c.rarity,
+               COUNT(*) AS copies,
+               SUM(CASE WHEN m.card_serial IS NOT NULL THEN 1 ELSE 0 END)
+                   AS listed
+        FROM cards c
+        LEFT JOIN market_listings m ON m.card_serial = c.serial
+        WHERE c.owner_id = ?
+    '''
+    params = [user_id]
+
+    if era is not None:
+        query += " AND c.era = ?"
+        params.append(era)
+    if rarity is not None:
+        query += " AND c.rarity = ?"
+        params.append(rarity)
+    if member_codes:
+        placeholders = ", ".join("?" for _ in member_codes)
+        query += f" AND c.member_code IN ({placeholders})"
+        params.extend(sorted(member_codes))
+
+    query += '''
+        GROUP BY c.era, c.member_code, c.rarity
+        HAVING COUNT(*) > 1
+    '''
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        groups = [
+            {
+                "era": group_era,
+                "member_code": member_code,
+                "rarity": group_rarity,
+                "copies": copies,
+                "listed": listed or 0,
+            }
+            for group_era, member_code, group_rarity, copies, listed
+            in cursor.fetchall()
+        ]
+
+    era_order = {era_key: index for index, era_key in enumerate(ERAS)}
+    member_order = {
+        member_code: index for index, member_code in enumerate(S_ORDER)
+    }
+    rarity_order = {
+        rarity_name: index for index, rarity_name in enumerate(RARITIES)
+    }
+    groups.sort(
+        key=lambda group: (
+            era_order.get(group["era"], len(era_order)),
+            member_order.get(
+                group["member_code"],
+                len(member_order),
+            ),
+            rarity_order.get(group["rarity"], len(rarity_order)),
+        )
+    )
+    return groups
+
+
+def fetch_duplicate_copies(user_id, group):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''SELECT c.serial, c.obtained_at, m.price
+               FROM cards c
+               LEFT JOIN market_listings m
+                   ON m.card_serial = c.serial
+               WHERE c.owner_id=? AND c.era=?
+                   AND c.member_code=? AND c.rarity=?
+               ORDER BY (m.card_serial IS NOT NULL),
+                        c.obtained_at IS NULL,
+                        c.obtained_at,
+                        c.id''',
+            (
+                user_id,
+                group["era"],
+                group["member_code"],
+                group["rarity"],
+            ),
+        )
+        return cursor.fetchall()
+
+
+class DuplicateGroupSelect(discord.ui.Select):
+    def __init__(self, view):
+        self.duplicate_view = view
+        options = []
+        for group in view.page_groups():
+            era_name, member_name = get_duplicate_group_names(group)
+            spare_count = group["copies"] - 1
+            available_count = count_ready_spares(group)
+            details = [
+                f"{spare_count} {pluralize(spare_count, 'spare')}"
+            ]
+            if group["listed"]:
+                details.append(f"{available_count} ready")
+                details.append(f"{group['listed']} listed")
+            options.append(
+                discord.SelectOption(
+                    label=(
+                        f"{member_name} • {group['rarity']} "
+                        f"(×{group['copies']})"
+                    )[:100],
+                    value=get_duplicate_group_key(group),
+                    description=(
+                        f"{era_name} • " + " • ".join(details)
+                    )[:100],
+                )
+            )
+        super().__init__(
+            placeholder="Choose a duplicate group to see spare serials",
+            options=options,
+            row=0,
+        )
+
+    async def callback(self, interaction):
+        group = self.duplicate_view.get_group_by_key(self.values[0])
+        if group is None:
+            await interaction.response.send_message(
+                "That duplicate group is no longer on this page. "
+                "Please reopen `/dupes`.",
+                ephemeral=True,
+            )
+            return
+        await self.duplicate_view.show_group_serials(interaction, group)
+
+
+class DuplicateView(View):
+    def __init__(self, user, groups, filter_labels=None):
+        super().__init__(timeout=180)
+        self.user = user
+        self.groups = groups
+        self.filter_labels = filter_labels or []
+        self.page = 0
+        self.message = None
+        self.update_items()
+
+    @property
+    def total_pages(self):
+        return max(
+            1,
+            (len(self.groups) + DUPLICATE_GROUPS_PER_PAGE - 1)
+            // DUPLICATE_GROUPS_PER_PAGE,
+        )
+
+    def page_groups(self):
+        start = self.page * DUPLICATE_GROUPS_PER_PAGE
+        return self.groups[start:start + DUPLICATE_GROUPS_PER_PAGE]
+
+    def get_group_by_key(self, key):
+        return next(
+            (
+                group
+                for group in self.page_groups()
+                if get_duplicate_group_key(group) == key
+            ),
+            None,
+        )
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.user.id:
+            await interaction.response.send_message(
+                "Only the person who opened this duplicate list can use it.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    def update_items(self):
+        self.clear_items()
+        self.add_item(DuplicateGroupSelect(self))
+        if self.total_pages > 1:
+            previous_button = Button(
+                label="◀ Previous",
+                style=discord.ButtonStyle.primary,
+                row=1,
+                disabled=self.page == 0,
+            )
+            previous_button.callback = self.show_previous_page
+            self.add_item(previous_button)
+
+            next_button = Button(
+                label="Next ▶",
+                style=discord.ButtonStyle.primary,
+                row=1,
+                disabled=self.page >= self.total_pages - 1,
+            )
+            next_button.callback = self.show_next_page
+            self.add_item(next_button)
+
+    async def show_previous_page(self, interaction):
+        self.page = max(0, self.page - 1)
+        self.update_items()
+        await interaction.response.edit_message(
+            embed=self.get_embed(),
+            view=self,
+        )
+
+    async def show_next_page(self, interaction):
+        self.page = min(self.total_pages - 1, self.page + 1)
+        self.update_items()
+        await interaction.response.edit_message(
+            embed=self.get_embed(),
+            view=self,
+        )
+
+    def get_embed(self):
+        spare_total = sum(group["copies"] - 1 for group in self.groups)
+        ready_total = sum(count_ready_spares(group) for group in self.groups)
+        listed_total = sum(group["listed"] for group in self.groups)
+
+        description_parts = [
+            (
+                f"**{len(self.groups)} duplicate "
+                f"{pluralize(len(self.groups), 'group')}**"
+            ),
+            (
+                f"**{spare_total} "
+                f"{pluralize(spare_total, 'spare card')}**"
+            ),
+        ]
+        if ready_total:
+            description_parts.append(f"**{ready_total} ready to use**")
+        if listed_total:
+            description_parts.append(f"{listed_total} listed")
+
+        description = " • ".join(description_parts) + (
+            "\nPick a group to see exact serials. The oldest available copy "
+            "is the keeper; every other copy is a spare."
+        )
+        if self.filter_labels:
+            description += "\nFilters: " + " • ".join(self.filter_labels)
+
+        embed = discord.Embed(
+            title=f"{self.user.display_name}'s Duplicates",
+            description=description,
+            color=0xff6b8b,
+        )
+        embed.set_author(
+            name="Duplicate tracker",
+            icon_url=self.user.display_avatar.url,
+        )
+
+        for group in self.page_groups():
+            era_name, member_name = get_duplicate_group_names(group)
+            spare_count = group["copies"] - 1
+            details = [
+                f"{spare_count} {pluralize(spare_count, 'spare')}"
+            ]
+            if group["listed"]:
+                details.append(
+                    f"{count_ready_spares(group)} ready to use"
+                )
+                details.append(f"{group['listed']} listed")
+            embed.add_field(
+                name=(
+                    f"{era_name} • {member_name} • {group['rarity']} "
+                    f"— ×{group['copies']}"
+                ),
+                value=" • ".join(details),
+                inline=False,
+            )
+
+        embed.set_footer(
+            text=(
+                f"Page {self.page + 1}/{self.total_pages} • "
+                "Use `/dupes` filters to narrow this list"
+            )
+        )
+        return embed
+
+    async def show_group_serials(self, interaction, group):
+        try:
+            rows = fetch_duplicate_copies(self.user.id, group)
+        except sqlite3.Error as error:
+            print(f"Database error while loading duplicate serials: {error}")
+            await interaction.response.send_message(
+                "I couldn't load that duplicate group. Please try again.",
+                ephemeral=True,
+            )
+            return
+
+        if len(rows) < 2:
+            await interaction.response.send_message(
+                "That group no longer has duplicates. "
+                "Reopen `/dupes` to refresh.",
+                ephemeral=True,
+            )
+            return
+
+        era_name, member_name = get_duplicate_group_names(group)
+        keeper_serial, _, keeper_price = rows[0]
+        ready_serials = [
+            serial for serial, _, price in rows[1:] if price is None
+        ]
+        listed_serials = [
+            (serial, price)
+            for serial, _, price in rows[1:]
+            if price is not None
+        ]
+
+        spare_count = len(rows) - 1
+        description = (
+            f"You own **{len(rows)} copies** — "
+            f"**{spare_count} {pluralize(spare_count, 'spare')}**.\n"
+            f"Keeper: `{keeper_serial}`"
+        )
+        if keeper_price is not None:
+            description += f" (listed for **{keeper_price:,} COMO**)"
+        if not ready_serials:
+            description += (
+                "\nAll spare copies are listed. Unlist one with `/unlist` "
+                "before using it."
+            )
+
+        embed = discord.Embed(
+            title=f"{era_name} • {member_name} • {group['rarity']}",
+            description=description,
+            color=0xff6b8b,
+        )
+        embed.set_author(
+            name="Duplicate serials",
+            icon_url=self.user.display_avatar.url,
+        )
+
+        copy_lines = []
+        for index, (serial, _, price) in enumerate(rows):
+            if index == 0:
+                status = "keeper"
+                if price is not None:
+                    status += f" • listed for {price:,} COMO"
+            elif price is None:
+                status = "spare • ready to use"
+            else:
+                status = f"spare • listed for {price:,} COMO"
+            copy_lines.append(f"`{serial}` — {status}")
+
+        shown_copies = copy_lines[:DUPLICATE_COPIES_PER_FIELD]
+        embed.add_field(
+            name="Copies",
+            value="\n".join(shown_copies),
+            inline=False,
+        )
+        if len(copy_lines) > len(shown_copies):
+            embed.add_field(
+                name="More copies",
+                value=(
+                    f"+{len(copy_lines) - len(shown_copies)} more copies "
+                    "not shown."
+                ),
+                inline=False,
+            )
+
+        if ready_serials:
+            shown_serials = ready_serials[:DUPLICATE_SERIALS_PER_FIELD]
+            embed.add_field(
+                name=f"Ready-to-use spares ({len(ready_serials)})",
+                value=" ".join(f"`{serial}`" for serial in shown_serials),
+                inline=False,
+            )
+            embed.add_field(
+                name="Copy for /merge",
+                value=f"```{' '.join(shown_serials)}```",
+                inline=False,
+            )
+            if len(ready_serials) > len(shown_serials):
+                embed.add_field(
+                    name="More spares",
+                    value=(
+                        f"{len(ready_serials) - len(shown_serials)} more "
+                        "ready-to-use spares are not shown. Use `/inventory` "
+                        "or narrow the filters."
+                    ),
+                    inline=False,
+                )
+
+        if listed_serials:
+            listed_lines = [
+                f"`{serial}` — {price:,} COMO"
+                for serial, price
+                in listed_serials[:DUPLICATE_COPIES_PER_FIELD]
+            ]
+            embed.add_field(
+                name=f"Listed spares ({len(listed_serials)})",
+                value="\n".join(listed_lines),
+                inline=False,
+            )
+            if len(listed_serials) > len(listed_lines):
+                embed.add_field(
+                    name="More listed spares",
+                    value=(
+                        f"+{len(listed_serials) - len(listed_lines)} more "
+                        "listed copies not shown."
+                    ),
+                    inline=False,
+                )
+
+        embed.add_field(
+            name="Use a spare with",
+            value=(
+                "`/spin serial:<serial>`\n"
+                "`/list serial:<serial> price:<amount>`\n"
+                "`/give recipient:@user serial:<serial>`\n"
+                "`/merge` — paste the copy-for-merge line"
+            ),
+            inline=False,
+        )
+        embed.set_footer(
+            text=(
+                "Keeper is the oldest available copy. Keep at least one "
+                "copy you want to display."
+            )
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+
+
+@slash_command(name='dupes', aliases=('duplicates', 'dupe'))
+async def duplicates(
+    ctx,
+    era: Literal["AAA", "ASSEMBLE", "ASSEMBLE24", "KRE", "VV"] = None,
+    rarity: Literal["Common", "Rare", "Epic", "Legendary", "Mythic"] = None,
+    member: str = None,
+):
+    """Find duplicate cards and copy spare serials for merging, spinning, or trading."""
+    if era is not None:
+        era_name = era.strip()
+        resolved_era = ERA_ALIAS_LOOKUP.get(normalize_era_alias(era_name))
+        if resolved_era is None or resolved_era not in ERAS:
+            await ctx.reply(
+                f"I couldn't identify `{era_name}` as an era."
+            )
+            return
+        era = resolved_era
+
+    if rarity is not None and rarity not in RARITIES:
+        await ctx.reply(f"I couldn't identify `{rarity}` as a rarity.")
+        return
+
+    member_codes = None
+    if member:
+        normalized_member = " ".join(member.casefold().split())
+        member_codes = {
+            member_code
+            for member_code, member_data in S_MEMBERS.items()
+            if normalized_member in {
+                member_code.casefold(),
+                " ".join(member_data["name"].casefold().split()),
+                " ".join(member_data["full_name"].casefold().split()),
+            }
+        }
+        if not member_codes:
+            await ctx.reply(
+                f"I couldn't find a tripleS member matching `{member}`."
+            )
+            return
+
+    filter_labels = []
+    if era:
+        filter_labels.append(ERAS[era]["name"])
+    if rarity:
+        filter_labels.append(rarity)
+    if member_codes:
+        filter_labels.append(
+            "Member: "
+            + ", ".join(
+                S_MEMBERS[member_code]["name"]
+                for member_code in S_ORDER
+                if member_code in member_codes
+            )
+        )
+
+    try:
+        groups = fetch_duplicate_groups(
+            ctx.author.id,
+            era=era,
+            rarity=rarity,
+            member_codes=member_codes,
+        )
+    except sqlite3.Error as error:
+        print(f"Database error while loading duplicates: {error}")
+        await ctx.reply("An error occurred while loading your duplicates.")
+        return
+
+    if not groups:
+        if filter_labels:
+            await ctx.reply(
+                "No duplicates match those filters. Try `/dupes` without "
+                "filters to see every duplicate group."
+            )
+        else:
+            await ctx.reply(
+                "You don't have any duplicate cards yet. Duplicates are "
+                "copies with the same member, era, and rarity."
+            )
+        return
+
+    view = DuplicateView(ctx.author, groups, filter_labels)
+    view.message = await ctx.reply(embed=view.get_embed(), view=view)
 
 
 @slash_command(name='inventory', aliases=('inv',))
