@@ -120,13 +120,22 @@ async def list_card(ctx, serial: str, price: int):
             c.execute("BEGIN IMMEDIATE")
 
             # 1. Verify the card exists and belongs to the user
-            c.execute('''SELECT owner_id FROM cards WHERE serial=?''', (serial,))
+            c.execute(
+                '''SELECT owner_id, in_binder FROM cards WHERE serial=?''',
+                (serial,),
+            )
             row = c.fetchone()
             if not row:
                 await ctx.reply("Card not found!")
                 return
             if row[0] != user_id:
                 await ctx.reply("You don't own this card!")
+                return
+            if row[1]:
+                await ctx.reply(
+                    "That card is in your binder. Remove it with "
+                    "`/binder remove` before listing it."
+                )
                 return
 
             # 2. Check if already listed
@@ -239,7 +248,8 @@ async def buy_card(ctx, serial: str):
             c.execute("UPDATE users SET como=? WHERE user_id=?", (new_seller_balance, seller_id))
 
             # Transfer card ownership
-            c.execute('''UPDATE cards SET owner_id=?, obtained_at=?
+            c.execute('''UPDATE cards
+                         SET owner_id=?, obtained_at=?, in_binder=0
                          WHERE serial=?''',
                       (buyer_id, str(datetime.datetime.now()), serial))
 

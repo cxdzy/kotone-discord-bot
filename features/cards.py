@@ -251,7 +251,7 @@ async def spin(ctx, serial: str = ""):
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                '''SELECT member_code, era, rarity
+                '''SELECT member_code, era, rarity, in_binder
                    FROM cards WHERE serial=? AND owner_id=?''',
                 (serial, ctx.author.id),
             )
@@ -259,7 +259,13 @@ async def spin(ctx, serial: str = ""):
             if card_row is None:
                 await ctx.reply("You don't own a card with that serial.")
                 return
-            member_code, era, rarity = card_row
+            member_code, era, rarity, in_binder = card_row
+            if in_binder:
+                await ctx.reply(
+                    "That card is in your binder. Remove it with "
+                    "`/binder remove` before spinning."
+                )
+                return
             if rarity not in SPIN_REWARD_COUNTS:
                 await ctx.reply(
                     "That card has an unsupported rarity and can't be spun."
@@ -362,7 +368,7 @@ async def merge_cards(ctx, *, card_serials: str = ""):
         color=0xff6b8b,
     )
     card_list = []
-    for serial, member_code, era, rarity, _ in selected_cards:
+    for serial, member_code, era, rarity, _, _ in selected_cards:
         member_name = ERAS[era]["members"][member_code]["full_name"]
         card_list.append(
             f"• `{serial}` — {member_name} ({ERAS[era]['name']}, {rarity})"
@@ -479,7 +485,10 @@ def get_duplicate_group_key(group):
 
 
 def count_ready_spares(group):
-    return max(0, group["copies"] - group["listed"] - 1)
+    return max(
+        0,
+        group["copies"] - group["listed"] - group["binder"] - 1,
+    )
 
 
 def pluralize(count, singular, plural=None):
@@ -493,7 +502,8 @@ def fetch_duplicate_groups(user_id, era=None, rarity=None, member_codes=None):
         SELECT c.era, c.member_code, c.rarity,
                COUNT(*) AS copies,
                SUM(CASE WHEN m.card_serial IS NOT NULL THEN 1 ELSE 0 END)
-                   AS listed
+                   AS listed,
+               SUM(CASE WHEN c.in_binder=1 THEN 1 ELSE 0 END) AS binder
         FROM cards c
         LEFT JOIN market_listings m ON m.card_serial = c.serial
         WHERE c.owner_id = ?
@@ -526,9 +536,16 @@ def fetch_duplicate_groups(user_id, era=None, rarity=None, member_codes=None):
                 "rarity": group_rarity,
                 "copies": copies,
                 "listed": listed or 0,
+                "binder": binder or 0,
             }
-            for group_era, member_code, group_rarity, copies, listed
-            in cursor.fetchall()
+            for (
+                group_era,
+                member_code,
+                group_rarity,
+                copies,
+                listed,
+                binder,
+            ) in cursor.fetchall()
         ]
 
     era_order = {era_key: index for index, era_key in enumerate(ERAS)}
@@ -555,13 +572,14 @@ def fetch_duplicate_copies(user_id, group):
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            '''SELECT c.serial, c.obtained_at, m.price
+            '''SELECT c.serial, c.obtained_at, m.price, c.in_binder
                FROM cards c
                LEFT JOIN market_listings m
                    ON m.card_serial = c.serial
                WHERE c.owner_id=? AND c.era=?
                    AND c.member_code=? AND c.rarity=?
-               ORDER BY (m.card_serial IS NOT NULL),
+               ORDER BY c.in_binder,
+                        (m.card_serial IS NOT NULL),
                         c.obtained_at IS NULL,
                         c.obtained_at,
                         c.id''',
@@ -586,9 +604,12 @@ class DuplicateGroupSelect(discord.ui.Select):
             details = [
                 f"{spare_count} {pluralize(spare_count, 'spare')}"
             ]
-            if group["listed"]:
+            if group["listed"] or group["binder"]:
                 details.append(f"{available_count} ready")
+            if group["listed"]:
                 details.append(f"{group['listed']} listed")
+            if group["binder"]:
+                details.append(f"{group['binder']} in binder")
             options.append(
                 discord.SelectOption(
                     label=(
@@ -702,6 +723,7 @@ class DuplicateView(View):
         spare_total = sum(group["copies"] - 1 for group in self.groups)
         ready_total = sum(count_ready_spares(group) for group in self.groups)
         listed_total = sum(group["listed"] for group in self.groups)
+        binder_total = sum(group["binder"] for group in self.groups)
 
         description_parts = [
             (
@@ -717,6 +739,8 @@ class DuplicateView(View):
             description_parts.append(f"**{ready_total} ready to use**")
         if listed_total:
             description_parts.append(f"{listed_total} listed")
+        if binder_total:
+            description_parts.append(f"{binder_total} in binder")
 
         description = " • ".join(description_parts) + (
             "\nPick a group to see exact serials. The oldest available copy "
@@ -741,11 +765,14 @@ class DuplicateView(View):
             details = [
                 f"{spare_count} {pluralize(spare_count, 'spare')}"
             ]
-            if group["listed"]:
+            if group["listed"] or group["binder"]:
                 details.append(
                     f"{count_ready_spares(group)} ready to use"
                 )
+            if group["listed"]:
                 details.append(f"{group['listed']} listed")
+            if group["binder"]:
+                details.append(f"{group['binder']} in binder")
             embed.add_field(
                 name=(
                     f"{era_name} • {member_name} • {group['rarity']} "
@@ -783,14 +810,17 @@ class DuplicateView(View):
             return
 
         era_name, member_name = get_duplicate_group_names(group)
-        keeper_serial, _, keeper_price = rows[0]
-        ready_serials = [
-            serial for serial, _, price in rows[1:] if price is None
-        ]
+        keeper_serial, _, keeper_price, keeper_bound = rows[0]
+        binder_rows = [row for row in rows if row[3]]
         listed_serials = [
             (serial, price)
-            for serial, _, price in rows[1:]
-            if price is not None
+            for serial, _, price, bound in rows[1:]
+            if price is not None and not bound
+        ]
+        ready_serials = [
+            serial
+            for serial, _, price, bound in rows[1:]
+            if price is None and not bound
         ]
 
         spare_count = len(rows) - 1
@@ -799,12 +829,20 @@ class DuplicateView(View):
             f"**{spare_count} {pluralize(spare_count, 'spare')}**.\n"
             f"Keeper: `{keeper_serial}`"
         )
+        if keeper_bound:
+            description += " (in binder)"
         if keeper_price is not None:
             description += f" (listed for **{keeper_price:,} COMO**)"
+        if binder_rows:
+            description += (
+                f"\n**{len(binder_rows)} "
+                f"{pluralize(len(binder_rows), 'copy', 'copies')}** "
+                "protected in your binder."
+            )
         if not ready_serials:
             description += (
-                "\nAll spare copies are listed. Unlist one with `/unlist` "
-                "before using it."
+                "\nNo unprotected, unlisted spares are currently available. "
+                "Use `/unlist` or `/binder remove` to free one up."
             )
 
         embed = discord.Embed(
@@ -818,15 +856,19 @@ class DuplicateView(View):
         )
 
         copy_lines = []
-        for index, (serial, _, price) in enumerate(rows):
+        for index, (serial, _, price, bound) in enumerate(rows):
             if index == 0:
                 status = "keeper"
-                if price is not None:
-                    status += f" • listed for {price:,} COMO"
+            elif bound:
+                status = "spare • protected in binder"
             elif price is None:
                 status = "spare • ready to use"
             else:
                 status = f"spare • listed for {price:,} COMO"
+            if index == 0 and bound:
+                status += " • protected in binder"
+            if index == 0 and price is not None:
+                status += f" • listed for {price:,} COMO"
             copy_lines.append(f"`{serial}` — {status}")
 
         shown_copies = copy_lines[:DUPLICATE_COPIES_PER_FIELD]
@@ -868,6 +910,27 @@ class DuplicateView(View):
                     inline=False,
                 )
 
+        if binder_rows:
+            binder_lines = [
+                f"`{serial}` — protected"
+                for serial, _, _, _
+                in binder_rows[:DUPLICATE_COPIES_PER_FIELD]
+            ]
+            embed.add_field(
+                name=f"Binder copies ({len(binder_rows)})",
+                value="\n".join(binder_lines),
+                inline=False,
+            )
+            if len(binder_rows) > len(binder_lines):
+                embed.add_field(
+                    name="More binder copies",
+                    value=(
+                        f"+{len(binder_rows) - len(binder_lines)} more "
+                        "protected copies not shown."
+                    ),
+                    inline=False,
+                )
+
         if listed_serials:
             listed_lines = [
                 f"`{serial}` — {price:,} COMO"
@@ -895,14 +958,15 @@ class DuplicateView(View):
                 "`/spin serial:<serial>`\n"
                 "`/list serial:<serial> price:<amount>`\n"
                 "`/give recipient:@user serial:<serial>`\n"
-                "`/merge` — paste the copy-for-merge line"
+                "`/merge` — paste the copy-for-merge line\n"
+                "`/binder remove serial:<serial>` — free a protected copy"
             ),
             inline=False,
         )
         embed.set_footer(
             text=(
-                "Keeper is the oldest available copy. Keep at least one "
-                "copy you want to display."
+                "Keeper prefers the oldest unprotected, unlisted copy. "
+                "Binder copies are never included as ready spares."
             )
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -1034,10 +1098,11 @@ async def inventory(
             c = conn.cursor()
 
             # Get user's cards
-            c.execute('''SELECT serial, member_code, era, rarity, obtained_at
+            c.execute('''SELECT serial, member_code, era, rarity, obtained_at,
+                                in_binder
                          FROM cards
                          WHERE owner_id=?
-                         ORDER BY obtained_at DESC''', (user_id,))
+                         ORDER BY in_binder DESC, obtained_at DESC''', (user_id,))
             cards = [
                 card
                 for card in c.fetchall()
@@ -1181,7 +1246,7 @@ async def give_card(ctx, recipient: discord.Member, serial: str):
             c = conn.cursor()
 
             # Check if the card exists and belongs to the sender
-            c.execute('''SELECT owner_id, member_code, era, rarity
+            c.execute('''SELECT owner_id, member_code, era, rarity, in_binder
                         FROM cards WHERE serial=?''', (serial,))
             card = c.fetchone()
 
@@ -1191,6 +1256,13 @@ async def give_card(ctx, recipient: discord.Member, serial: str):
 
             if card[0] != ctx.author.id:
                 await ctx.reply("You don't own this card!")
+                return
+
+            if card[4]:
+                await ctx.reply(
+                    "That card is in your binder. Remove it with "
+                    "`/binder remove` before giving it away."
+                )
                 return
 
             # Check if recipient exists in users table, if not create them
@@ -1204,7 +1276,7 @@ async def give_card(ctx, recipient: discord.Member, serial: str):
 
             # Transfer the card
             c.execute('''UPDATE cards
-                        SET owner_id=?, obtained_at=?
+                        SET owner_id=?, obtained_at=?, in_binder=0
                         WHERE serial=?''',
                       (recipient.id, str(datetime.datetime.now()), serial))
 

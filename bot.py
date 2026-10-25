@@ -68,7 +68,14 @@ class SlashContext:
         return await self.reply(content, **kwargs)
 
 
-def slash_command(name=None, *, aliases=(), group=None):
+def slash_command(
+    name=None,
+    *,
+    aliases=(),
+    group=None,
+    autocomplete=None,
+    descriptions=None,
+):
     def decorator(callback):
         callback_signature = inspect.signature(callback)
         option_parameters = []
@@ -112,6 +119,10 @@ def slash_command(name=None, *, aliases=(), group=None):
         invoke.__annotations__ = {
             parameter.name: parameter.annotation for parameter in parameters
         }
+        if descriptions:
+            invoke.__discord_app_commands_param_description__ = descriptions
+        if autocomplete:
+            app_commands.autocomplete(**autocomplete)(invoke)
 
         for registered_name in (command_name, *aliases):
             SLASH_COMMAND_ALIASES[registered_name] = tuple(
@@ -255,6 +266,7 @@ def init_db():
                       rarity TEXT,
                       owner_id INTEGER,
                       obtained_at TEXT,
+                      in_binder INTEGER NOT NULL DEFAULT 0,
                       FOREIGN KEY(owner_id) REFERENCES users(user_id))''')
         
         # Cooldowns table
@@ -340,12 +352,19 @@ def init_db():
         c.execute('''CREATE INDEX IF NOT EXISTS idx_trivia_seen_user
                      ON trivia_seen(user_id, difficulty)''')
         
-        # Check if era column exists, if not add it (for migration)
+        # Check if columns exist, if not add them (for migration)
         c.execute("PRAGMA table_info(cards)")
         columns = [column[1] for column in c.fetchall()]
         if 'era' not in columns:
             c.execute("ALTER TABLE cards ADD COLUMN era TEXT")
             c.execute("UPDATE cards SET era = 'AAA' WHERE era IS NULL")
+        if 'in_binder' not in columns:
+            c.execute(
+                "ALTER TABLE cards ADD COLUMN in_binder "
+                "INTEGER NOT NULL DEFAULT 0"
+            )
+        c.execute('''CREATE INDEX IF NOT EXISTS idx_cards_binder
+                     ON cards(owner_id, in_binder)''')
 
 init_db()
 
@@ -1120,7 +1139,7 @@ class ClaimButton(Button):
                 if card is not None:
                     # Card is available, claim it
                     c.execute('''UPDATE cards 
-                                SET owner_id=?, obtained_at=? 
+                                SET owner_id=?, obtained_at=?, in_binder=0
                                 WHERE serial=? AND owner_id IS NULL''',
                              (user_id, str(datetime.datetime.now()), self.card_serial))
                     
@@ -1405,14 +1424,19 @@ def start_card_spin(user_id, serial):
         cursor = conn.cursor()
         cursor.execute("BEGIN IMMEDIATE")
         cursor.execute(
-            '''SELECT member_code, era, rarity
+            '''SELECT member_code, era, rarity, in_binder
                FROM cards WHERE serial=? AND owner_id=?''',
             (serial, user_id),
         )
         card_row = cursor.fetchone()
         if card_row is None:
             raise ValueError("You don't own a card with that serial anymore.")
-        member_code, era, rarity = card_row
+        member_code, era, rarity, in_binder = card_row
+        if in_binder:
+            raise ValueError(
+                "That card is in your binder. Remove it with "
+                "`/binder remove` before spinning."
+            )
         if rarity not in SPIN_REWARD_COUNTS:
             raise ValueError("That card has an unsupported rarity and can't be spun.")
 
@@ -1706,7 +1730,9 @@ class InventoryView(View):
         )
         
         for i in range(start_idx, end_idx):
-            serial, member_code, era, rarity, obtained_at = filtered_cards[i]
+            serial, member_code, era, rarity, obtained_at, in_binder = (
+                filtered_cards[i]
+            )
             
             try:
                 member_name = ERAS[era]['members'][member_code]['name']
@@ -1716,8 +1742,13 @@ class InventoryView(View):
                 era_name = "Unknown"
             
             embed.add_field(
-                name=f"{serial}",
-                value=f"Member: {member_name}\nEra: {era_name}\nRarity: {rarity}\nObtained: {obtained_at[:10] if obtained_at else 'Unknown'}",
+                name=f"{'📌 ' if in_binder else ''}{serial}",
+                value=(
+                    f"Member: {member_name}\nEra: {era_name}\n"
+                    f"Rarity: {rarity}\n"
+                    f"Binder: {'Protected' if in_binder else 'No'}\n"
+                    f"Obtained: {obtained_at[:10] if obtained_at else 'Unknown'}"
+                ),
                 inline=False
             )
 
@@ -1845,7 +1876,7 @@ def get_merge_selection(cursor, user_id, serials):
 
     placeholders = ",".join("?" for _ in serials)
     cursor.execute(
-        f'''SELECT serial, member_code, era, rarity, owner_id
+        f'''SELECT serial, member_code, era, rarity, owner_id, in_binder
             FROM cards WHERE serial IN ({placeholders})''',
         serials,
     )
@@ -1856,6 +1887,12 @@ def get_merge_selection(cursor, user_id, serials):
     selected_cards = [cards_by_serial[serial] for serial in serials]
     if any(card[4] != user_id for card in selected_cards):
         raise ValueError("You can only merge cards that you own.")
+    binder_serials = [card[0] for card in selected_cards if card[5]]
+    if binder_serials:
+        raise ValueError(
+            "Remove these cards from your binder before merging: "
+            + ", ".join(f"`{serial}`" for serial in binder_serials)
+        )
 
     selected_rarity = selected_cards[0][3]
     if any(card[3] != selected_rarity for card in selected_cards):
@@ -2277,7 +2314,7 @@ HELP_CATEGORIES = (
         "🎴 Cards",
         (
             "drop", "spin", "inventory", "view", "merge", "collection", "dupes",
-            "give", "target", "bias", "bio", "profile", "stats",
+            "binder", "give", "target", "bias", "bio", "profile", "stats",
         ),
     ),
     ("🏪 Market", ("market", "list", "unlist", "buy")),
