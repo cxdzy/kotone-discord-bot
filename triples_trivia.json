@@ -1,0 +1,282 @@
+[
+  {
+    "id": "easy_01",
+    "difficulty": "easy",
+    "question": "Which K-pop group is this bot themed around?",
+    "choices": ["tripleS", "LOONA", "IVE", "fromis_9"],
+    "answer": 0
+  },
+  {
+    "id": "easy_02",
+    "difficulty": "easy",
+    "question": "What is tripleS' official fandom name?",
+    "choices": ["Orbit", "WAV", "Dive", "Moa"],
+    "answer": 1
+  },
+  {
+    "id": "easy_03",
+    "difficulty": "easy",
+    "question": "How many members are in tripleS ASSEMBLE24?",
+    "choices": ["8", "16", "24", "12"],
+    "answer": 2
+  },
+  {
+    "id": "easy_04",
+    "difficulty": "easy",
+    "question": "Which member's full name is Kamimoto Kotone?",
+    "choices": ["Mayu", "Lynn", "Kaede", "Kotone"],
+    "answer": 3
+  },
+  {
+    "id": "easy_05",
+    "difficulty": "easy",
+    "question": "Which member is from Thailand?",
+    "choices": ["Sullin", "Xinyu", "Nien", "Mayu"],
+    "answer": 0
+  },
+  {
+    "id": "easy_06",
+    "difficulty": "easy",
+    "question": "Which member is from Taiwan?",
+    "choices": ["Lynn", "Sullin", "Nien", "Kotone"],
+    "answer": 2
+  },
+  {
+    "id": "easy_07",
+    "difficulty": "easy",
+    "question": "Which member was the first to be revealed in tripleS?",
+    "choices": ["Hyerin", "Seoyeon", "Yooyeon", "Jiwoo"],
+    "answer": 1
+  },
+  {
+    "id": "easy_08",
+    "difficulty": "easy",
+    "question": "Which company manages tripleS?",
+    "choices": [
+      "SM Entertainment",
+      "JYP Entertainment",
+      "MODHAUS",
+      "HYBE"
+    ],
+    "answer": 2
+  },
+  {
+    "id": "easy_09",
+    "difficulty": "easy",
+    "question": "What does AAA stand for?",
+    "choices": [
+      "Acid Angel from Asia",
+      "All About Angels",
+      "Asian Angel Alliance",
+      "Academy Angel Awards"
+    ],
+    "answer": 0
+  },
+  {
+    "id": "easy_10",
+    "difficulty": "easy",
+    "question": "When did tripleS make their official debut?",
+    "choices": [
+      "October 28, 2022",
+      "May 8, 2024",
+      "February 13, 2023",
+      "April 10, 2023"
+    ],
+    "answer": 2
+  },
+  {
+    "id": "medium_01",
+    "difficulty": "medium",
+    "question": "Which quartet makes up +(KR)ystal Eyes (KRE)?",
+    "choices": [
+      "Hyerin, Yooyeon, Nakyoung, Yubin",
+      "Seoyeon, Jiwoo, Chaeyeon, Soomin",
+      "Kotone, Yeonji, Nien, Sohyun",
+      "Mayu, Lynn, Joobin, Hayeon"
+    ],
+    "answer": 1
+  },
+  {
+    "id": "medium_02",
+    "difficulty": "medium",
+    "question": "Which member is NOT part of AAA?",
+    "choices": ["Hyerin", "Yooyeon", "Seoyeon", "Nakyoung"],
+    "answer": 2
+  },
+  {
+    "id": "medium_03",
+    "difficulty": "medium",
+    "question": "Which member is part of VV?",
+    "choices": ["Seoyeon", "Kotone", "Jiwoo", "Chaeyeon"],
+    "answer": 1
+  },
+  {
+    "id": "medium_04",
+    "difficulty": "medium",
+    "question": "How many members are in VV?",
+    "choices": ["8", "10", "16", "12"],
+    "answer": 3
+  },
+  {
+    "id": "medium_05",
+    "difficulty": "medium",
+    "question": "Which unit debuted first?",
+    "choices": ["KRE", "ASSEMBLE24", "AAA", "VV"],
+    "answer": 2
+  },
+  {
+    "id": "medium_06",
+    "difficulty": "medium",
+    "question": "Which member is in KRE but not AAA?",
+    "choices": ["Hyerin", "Yooyeon", "Yubin", "Jiwoo"],
+    "answer": 3
+  },
+  {
+    "id": "medium_07",
+    "difficulty": "medium",
+    "question": "Which member is in AAA but not KRE?",
+    "choices": ["Seoyeon", "Hyerin", "Soomin", "Chaeyeon"],
+    "answer": 1
+  },
+  {
+    "id": "medium_08",
+    "difficulty": "medium",
+    "question": "Which member is NOT in KRE?",
+    "choices": ["Seoyeon", "Jiwoo", "Kotone", "Soomin"],
+    "answer": 2
+  },
+  {
+    "id": "medium_09",
+    "difficulty": "medium",
+    "question": "Whose full name is Pirada Bunraksa?",
+    "choices": ["Sullin", "Nien", "Xinyu", "Mayu"],
+    "answer": 0
+  },
+  {
+    "id": "medium_10",
+    "difficulty": "medium",
+    "question": "Which member is part of the original 10-member ASSEMBLE lineup?",
+    "choices": ["Kotone", "Nien", "Sohyun", "Dahyun"],
+    "answer": 3
+  },
+  {
+    "id": "medium_11",
+    "difficulty": "medium",
+    "question": "Which member is from China?",
+    "choices": ["Mayu", "Xinyu", "Sullin", "Nien"],
+    "answer": 1
+  },
+  {
+    "id": "medium_12",
+    "difficulty": "medium",
+    "question": "How many members are in KRE?",
+    "choices": ["4", "6", "8", "10"],
+    "answer": 0
+  },
+  {
+    "id": "hard_01",
+    "difficulty": "hard",
+    "question": "What does VV stand for?",
+    "choices": [
+      "Visionary Vision",
+      "Vivid Voice",
+      "Velvet Vibe",
+      "Virtual Vision"
+    ],
+    "answer": 0
+  },
+  {
+    "id": "hard_02",
+    "difficulty": "hard",
+    "question": "What does KRE stand for?",
+    "choices": [
+      "Korea's Rookie Ensemble",
+      "Krystal Rhythm Edition",
+      "+(KR)ystal Eyes",
+      "K-Pop Rising Stars"
+    ],
+    "answer": 2
+  },
+  {
+    "id": "hard_03",
+    "difficulty": "hard",
+    "question": "What phrase does tripleS stand for?",
+    "choices": [
+      "Super Sonic Stars",
+      "Social Sonyo Seoul",
+      "Special Stage Seoul",
+      "Social Star System"
+    ],
+    "answer": 1
+  },
+  {
+    "id": "hard_04",
+    "difficulty": "hard",
+    "question": "Which member was the final member revealed before ASSEMBLE24?",
+    "choices": ["Jiyeon", "Seoah", "Sullin", "Chaewon"],
+    "answer": 0
+  },
+  {
+    "id": "hard_05",
+    "difficulty": "hard",
+    "question": "Which member appears in VV but not in ASSEMBLE?",
+    "choices": ["Hyerin", "Yooyeon", "Kotone", "Kaede"],
+    "answer": 2
+  },
+  {
+    "id": "hard_06",
+    "difficulty": "hard",
+    "question": "Which member is in both AAA and VV?",
+    "choices": ["Hyerin", "Seoyeon", "Jiwoo", "Soomin"],
+    "answer": 0
+  },
+  {
+    "id": "hard_07",
+    "difficulty": "hard",
+    "question": "Which member is in both KRE and ASSEMBLE?",
+    "choices": ["Kotone", "Nien", "Sohyun", "Seoyeon"],
+    "answer": 3
+  },
+  {
+    "id": "hard_08",
+    "difficulty": "hard",
+    "question": "Which member is Japanese and part of VV?",
+    "choices": ["Nien", "Kaede", "Sullin", "Xinyu"],
+    "answer": 1
+  },
+  {
+    "id": "hard_09",
+    "difficulty": "hard",
+    "question": "Which unit was formed from the first ten revealed members?",
+    "choices": ["VV", "KRE", "ASSEMBLE", "AAA"],
+    "answer": 2
+  },
+  {
+    "id": "hard_10",
+    "difficulty": "hard",
+    "question": "Which member is NOT part of VV?",
+    "choices": ["Kotone", "Nien", "Dahyun", "Sohyun"],
+    "answer": 2
+  },
+  {
+    "id": "hard_11",
+    "difficulty": "hard",
+    "question": "Which unit is made up of members from both AAA and KRE?",
+    "choices": ["ACID EYES", "VV", "ASSEMBLE24", "LOVElution"],
+    "answer": 0
+  },
+  {
+    "id": "hard_12",
+    "difficulty": "hard",
+    "question": "What is the title track of tripleS' debut mini album ASSEMBLE?",
+    "choices": ["Girls Never Die", "Rising", "Generation", "Invincible"],
+    "answer": 1
+  },
+  {
+    "id": "hard_13",
+    "difficulty": "hard",
+    "question": "Who is tripleS' maknae?",
+    "choices": ["Jiyeon", "Sullin", "SeoAh", "Yeonji"],
+    "answer": 2
+  }
+]

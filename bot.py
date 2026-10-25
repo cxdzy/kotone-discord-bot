@@ -212,8 +212,11 @@ S_MEMBERS.update({
     "JSH": {"name": "Jiyeon", "full_name": "Ji Suhyeon"},
 })
 MINIGAMES = (
-    ("Minigame 1", "Minigame 1 description"),
-    ("Minigame 2", "Minigame 2 description"),
+    (
+        "tripleS Trivia",
+        "Answer tripleS trivia questions to earn COMO.",
+        "/trivia",
+    ),
 )
 
 # Database context manager for safer connections
@@ -299,6 +302,12 @@ def init_db():
                       member_code TEXT NOT NULL,
                       rarity TEXT,
                       FOREIGN KEY(user_id) REFERENCES users(user_id))''')
+        c.execute('''CREATE TABLE IF NOT EXISTS trivia_seen
+                     (user_id INTEGER NOT NULL,
+                      question_id TEXT NOT NULL,
+                      difficulty TEXT NOT NULL,
+                      seen_at TEXT NOT NULL,
+                      PRIMARY KEY (user_id, question_id))''')
         c.execute('''CREATE TABLE IF NOT EXISTS user_biases
                      (user_id INTEGER NOT NULL,
                       member_code TEXT NOT NULL,
@@ -328,6 +337,8 @@ def init_db():
                      ON cooldowns(expires_at)''')
         c.execute('''CREATE INDEX IF NOT EXISTS idx_market_seller 
                      ON market_listings(seller_id)''')
+        c.execute('''CREATE INDEX IF NOT EXISTS idx_trivia_seen_user
+                     ON trivia_seen(user_id, difficulty)''')
         
         # Check if era column exists, if not add it (for migration)
         c.execute("PRAGMA table_info(cards)")
@@ -2251,7 +2262,10 @@ HELP_CATEGORIES = (
     ("🏪 Market", ("market", "list", "unlist", "buy")),
     (
         "🎮 Fun & utility",
-        ("help", "cooldown", "remind", "afk", "minigame", "8ball", "choose", "rob"),
+        (
+            "help", "cooldown", "remind", "afk", "minigame", "trivia",
+            "8ball", "choose", "rob",
+        ),
     ),
 )
 

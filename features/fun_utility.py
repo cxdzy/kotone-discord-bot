@@ -1,13 +1,6 @@
 from bot import *
 from typing import Literal
 
-minigame_group = app_commands.Group(
-    name="minigame",
-    description="Browse and play minigames.",
-)
-bot.tree.add_command(minigame_group)
-SLASH_COMMANDS["minigame"] = minigame_group
-
 @slash_command(name='8ball')
 async def eight_ball(ctx, *, question):
     """Ask the magic 8-ball a question."""
@@ -51,35 +44,26 @@ async def choose(
     )
 
 
-@slash_command(name="list", group=minigame_group)
+@slash_command(name="minigame")
 async def minigame(ctx):
-    """Show the available minigames."""
+    """Show the available minigames and their commands."""
     embed = discord.Embed(
         title="🎮 Minigames",
-        description="Use `/minigame play` to choose a minigame.",
+        description=(
+            "Each minigame has its own command. "
+            "Use the command listed with a minigame to play it."
+        ),
         color=0xff6b8b,
     )
-    for number, (name, description) in enumerate(MINIGAMES, 1):
+    for number, (name, description, command) in enumerate(MINIGAMES, 1):
         embed.add_field(
             name=f"{number}. {name}",
-            value=f"- {description}",
+            value=f"- {description}\nPlay with `{command}`",
             inline=False,
         )
+    if not MINIGAMES:
+        embed.description = "No minigames are available yet. Check back later!"
     await ctx.reply(embed=embed)
-
-
-@slash_command(name="play", group=minigame_group)
-async def minigame_play(ctx, number: int):
-    """Select a minigame by its number."""
-    if number < 1 or number > len(MINIGAMES):
-        await ctx.reply(
-            f"Choose a minigame number from 1 to {len(MINIGAMES)}. "
-            "Use `/minigame list` to see the list."
-        )
-        return
-
-    name = MINIGAMES[number - 1][0]
-    await ctx.reply(f"**{name}** isn't available yet. Check back later!")
 
 
 @slash_command(name='profile')
@@ -270,6 +254,7 @@ async def cooldown(ctx):
         'drop': '🎴 Drop',
         'spin': '🎰 Spin',
         'claim': '🙋 Claim',
+        'trivia': '🧠 Trivia',
     }
     now = time.time()
     today = datetime.date.today().isoformat()
