@@ -375,6 +375,7 @@ COOLDOWN_REMINDER_TYPES = {
     "drop": ("Drop", "/drop"),
     "spin": ("Spin", "/spin serial"),
     "claim": ("Claim", None),
+    "trivia": ("Trivia", "/trivia"),
 }
 
 def schedule_cooldown_reminder(cursor, user_id, cooldown_type, expires_at):

@@ -198,11 +198,18 @@ def start_trivia_session(user_id, username):
                VALUES (?, ?, 0, NULL, 0)''',
             (user_id, username),
         )
+        expires_at = now + TRIVIA_COOLDOWN_SECONDS
         cursor.execute(
             '''INSERT OR REPLACE INTO cooldowns
                (user_id, cooldown_type, expires_at)
                VALUES (?, 'trivia', ?)''',
-            (user_id, now + TRIVIA_COOLDOWN_SECONDS),
+            (user_id, expires_at),
+        )
+        schedule_cooldown_reminder(
+            cursor,
+            user_id,
+            "trivia",
+            expires_at,
         )
         conn.commit()
 

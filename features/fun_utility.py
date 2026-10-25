@@ -350,14 +350,37 @@ async def cooldown(ctx):
         await ctx.reply("An error occurred while checking your cooldowns.")
 
 
-@slash_command(name='remind', aliases=('reminder', 'reminders'))
+@slash_command(
+    name='remind',
+    aliases=('reminder', 'reminders'),
+    descriptions={
+        "daily": "DM me when my daily cooldown resets.",
+        "weekly": "DM me when my weekly cooldown resets.",
+        "drop": "DM me when my drop cooldown resets.",
+        "spin": "DM me when my spin cooldown resets.",
+        "claim": "DM me when I can claim a card again.",
+        "trivia": "DM me when I can play trivia again.",
+    },
+)
 async def cooldown_reminders(
     ctx,
-    cooldown_type: Literal["daily", "weekly", "drop", "spin", "claim", "all"] = None,
-    enabled: bool = True,
+    daily: bool = None,
+    weekly: bool = None,
+    drop: bool = None,
+    spin: bool = None,
+    claim: bool = None,
+    trivia: bool = None,
 ):
-    """Choose which cooldown resets should be sent to you by DM."""
+    """Set any combination of cooldown reminders on or off."""
     now = time.time()
+    requested_settings = {
+        "daily": daily,
+        "weekly": weekly,
+        "drop": drop,
+        "spin": spin,
+        "claim": claim,
+        "trivia": trivia,
+    }
 
     try:
         with get_db() as conn:
@@ -372,34 +395,34 @@ async def cooldown_reminders(
                 ),
             )
 
-            if cooldown_type is not None:
-                if cooldown_type == "all":
-                    selected_types = list(COOLDOWN_REMINDER_TYPES)
-                else:
-                    selected_types = [cooldown_type]
-
-                for selected_type in selected_types:
-                    expires_at = None
-                    if enabled:
-                        cursor.execute(
-                            '''SELECT expires_at FROM cooldowns
-                               WHERE user_id=? AND cooldown_type=? AND expires_at>?''',
-                            (ctx.author.id, selected_type, now),
-                        )
-                        active_cooldown = cursor.fetchone()
-                        if active_cooldown:
-                            expires_at = active_cooldown[0]
+            selected_types = [
+                cooldown_type
+                for cooldown_type, setting in requested_settings.items()
+                if setting is not None
+            ]
+            for selected_type in selected_types:
+                enabled = requested_settings[selected_type]
+                expires_at = None
+                if enabled:
                     cursor.execute(
-                        '''UPDATE cooldown_reminders
-                           SET enabled=?, expires_at=?
-                           WHERE user_id=? AND cooldown_type=?''',
-                        (
-                            int(enabled),
-                            expires_at,
-                            ctx.author.id,
-                            selected_type,
-                        ),
+                        '''SELECT expires_at FROM cooldowns
+                           WHERE user_id=? AND cooldown_type=? AND expires_at>?''',
+                        (ctx.author.id, selected_type, now),
                     )
+                    active_cooldown = cursor.fetchone()
+                    if active_cooldown:
+                        expires_at = active_cooldown[0]
+                cursor.execute(
+                    '''UPDATE cooldown_reminders
+                       SET enabled=?, expires_at=?
+                       WHERE user_id=? AND cooldown_type=?''',
+                    (
+                        int(enabled),
+                        expires_at,
+                        ctx.author.id,
+                        selected_type,
+                    ),
+                )
 
             cursor.execute(
                 '''SELECT cooldown_type, enabled FROM cooldown_reminders
@@ -416,25 +439,21 @@ async def cooldown_reminders(
         f"**{label}:** {'On' if settings.get(cooldown_type, 0) else 'Off'}"
         for cooldown_type, (label, _) in COOLDOWN_REMINDER_TYPES.items()
     )
-    if cooldown_type is not None:
-        changed_types = (
-            list(COOLDOWN_REMINDER_TYPES)
-            if cooldown_type == "all"
-            else [cooldown_type]
-        )
-        state = "enabled" if enabled else "disabled"
+    if selected_types:
         changed_labels = ", ".join(
-            COOLDOWN_REMINDER_TYPES[cooldown_type][0]
-            for cooldown_type in changed_types
+            f"{COOLDOWN_REMINDER_TYPES[cooldown_type][0]} "
+            f"{'on' if requested_settings[cooldown_type] else 'off'}"
+            for cooldown_type in selected_types
         )
         await ctx.reply(
-            f"{changed_labels} cooldown reminders {state}.\n\n{settings_text}"
+            f"Updated reminders: {changed_labels}.\n\n{settings_text}"
         )
     else:
         await ctx.reply(
             "Cooldown reminder settings (sent by DM):\n"
             f"{settings_text}\n\n"
-            "Choose a cooldown and set `enabled` to on or off to change a reminder."
+            "Set any combination of reminder options to on or off in one command. "
+            "Options you leave unset won't change."
         )
 
 
