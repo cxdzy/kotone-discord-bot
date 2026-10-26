@@ -33,7 +33,9 @@ def main():
         sys.path.insert(0, str(root))
         import bot
 
-        count = len(bot.tree.get_commands())
+        count = len(bot.bot.tree.get_commands())
+        names = sorted(c.name for c in bot.bot.tree.get_commands())
+        print("NAMES: " + ",".join(names), file=sys.stderr)
     except BaseException:
         traceback.print_exc(file=sys.stderr)
         return 1
