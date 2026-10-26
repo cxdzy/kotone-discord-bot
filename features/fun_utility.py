@@ -4,21 +4,31 @@ import sqlite3
 import time
 import discord
 from discord import app_commands
-from bot import (
-    COOLDOWN_REMINDER_TYPES,
-    HelpView,
-    MINIGAMES,
-    RARITIES,
+from kotone.client import (
     SLASH_COMMANDS,
     SLASH_COMMAND_ALIASES,
+    slash_command,
+)
+from kotone.config import (
+    MINIGAMES,
+    RARITIES,
     SPIN_DAILY_LIMIT,
     S_MEMBERS,
     S_ORDER,
-    format_target,
-    get_db,
-    get_user_target,
+)
+from kotone.cooldowns import (
+    COOLDOWN_REMINDER_TYPES,
     next_local_midnight_timestamp,
-    slash_command,
+)
+from kotone.db import (
+    get_db,
+)
+from kotone.game import (
+    format_target,
+    get_user_target,
+)
+from kotone.views import (
+    HelpView,
 )
 from typing import Literal
 

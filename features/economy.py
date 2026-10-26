@@ -4,16 +4,24 @@ import random
 import sqlite3
 import time
 import discord
-from bot import (
+from kotone.client import (
+    slash_command,
+)
+from kotone.cooldowns import (
+    schedule_cooldown_reminder,
+)
+from kotone.db import (
+    get_db,
+)
+from kotone.game import (
+    generate_card,
+    get_user_target,
+)
+from kotone.shop import (
     SHOP_ITEMS,
     SHOP_ITEM_ALIASES,
     advance_daily_streak,
-    generate_card,
-    get_db,
-    get_user_target,
     purchase_shop_item,
-    schedule_cooldown_reminder,
-    slash_command,
     use_shop_item,
 )
 

@@ -8,14 +8,18 @@ from eras import (
     ERA_ALIAS_LOOKUP,
     normalize_era_alias,
 )
-from bot import (
-    RARITIES,
+from kotone.client import (
     SLASH_COMMANDS,
+    bot,
+    slash_command,
+)
+from kotone.config import (
+    RARITIES,
     S_MEMBERS,
     S_ORDER,
-    bot,
+)
+from kotone.db import (
     get_db,
-    slash_command,
 )
 
 BINDER_PAGE_SIZE = 5

@@ -35,16 +35,16 @@ jobs:
           pip install ruff==0.17.2
 
       - name: Compile check
-        run: python -m compileall -q bot.py eras.py features
+        run: python -m compileall -q bot.py eras.py features kotone
 
       # Only real errors: syntax (E9), bad string formatting/comparisons (F63),
       # invalid statements (F7), undefined names (F82). F403/F405 are ignored
-      # because features/ use "from bot import *" (not selected anyway).
+      # as a leftover from when features/ used star imports (not selected anyway).
       # ci/ is included so the smoke script is linted too.
       - name: Ruff (errors only)
         run: >
           ruff check --select E9,F63,F7,F82 --ignore F403,F405
-          --output-format=github bot.py eras.py features ci
+          --output-format=github bot.py eras.py features kotone ci
 
       - name: Smoke test (PR code)
         id: pr_smoke

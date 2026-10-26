@@ -3,9 +3,11 @@ import sqlite3
 import discord
 from discord.ui import Button, View
 from eras import ERAS
-from bot import (
-    get_db,
+from kotone.client import (
     slash_command,
+)
+from kotone.db import (
+    get_db,
 )
 
 @slash_command(
