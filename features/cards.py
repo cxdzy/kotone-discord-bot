@@ -27,7 +27,6 @@ from bot import (
     get_card_image,
     get_merge_selection,
     get_user_target,
-    has_active_drop_booster,
     parse_biases,
 )
 from kotone.client import (
@@ -46,6 +45,9 @@ from kotone.cooldowns import (
 )
 from kotone.db import (
     get_db,
+)
+from kotone.shop import (
+    has_active_drop_booster,
 )
 from typing import Literal
 from io import BytesIO

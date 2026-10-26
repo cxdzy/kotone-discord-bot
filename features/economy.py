@@ -5,13 +5,8 @@ import sqlite3
 import time
 import discord
 from bot import (
-    SHOP_ITEMS,
-    SHOP_ITEM_ALIASES,
-    advance_daily_streak,
     generate_card,
     get_user_target,
-    purchase_shop_item,
-    use_shop_item,
 )
 from kotone.client import (
     slash_command,
@@ -21,6 +16,13 @@ from kotone.cooldowns import (
 )
 from kotone.db import (
     get_db,
+)
+from kotone.shop import (
+    SHOP_ITEMS,
+    SHOP_ITEM_ALIASES,
+    advance_daily_streak,
+    purchase_shop_item,
+    use_shop_item,
 )
 
 @slash_command(name='daily')
