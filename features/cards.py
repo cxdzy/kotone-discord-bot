@@ -13,15 +13,10 @@ from eras import (
 from bot import (
     ClaimButton,
     CollectionView,
-    DROP_CARD_IMAGE_FILENAME,
     InventoryView,
     MergeConfirmationView,
     SpinConfirmationView,
     create_collection_embed,
-    create_collection_embed_image,
-    create_drop_embed,
-    create_drop_embed_image,
-    get_card_image,
 )
 from kotone.client import (
     slash_command,
@@ -47,6 +42,13 @@ from kotone.game import (
     get_merge_selection,
     get_user_target,
     parse_biases,
+)
+from kotone.images import (
+    DROP_CARD_IMAGE_FILENAME,
+    create_collection_embed_image,
+    create_drop_embed,
+    create_drop_embed_image,
+    get_card_image,
 )
 from kotone.shop import (
     has_active_drop_booster,
