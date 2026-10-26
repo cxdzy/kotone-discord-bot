@@ -15,19 +15,13 @@ from bot import (
     CollectionView,
     DROP_CARD_IMAGE_FILENAME,
     InventoryView,
-    MERGE_UPGRADES,
     MergeConfirmationView,
     SpinConfirmationView,
     create_collection_embed,
     create_collection_embed_image,
     create_drop_embed,
     create_drop_embed_image,
-    format_target,
-    generate_unique_cards,
     get_card_image,
-    get_merge_selection,
-    get_user_target,
-    parse_biases,
 )
 from kotone.client import (
     slash_command,
@@ -45,6 +39,14 @@ from kotone.cooldowns import (
 )
 from kotone.db import (
     get_db,
+)
+from kotone.game import (
+    MERGE_UPGRADES,
+    format_target,
+    generate_unique_cards,
+    get_merge_selection,
+    get_user_target,
+    parse_biases,
 )
 from kotone.shop import (
     has_active_drop_booster,

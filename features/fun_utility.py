@@ -6,8 +6,6 @@ import discord
 from discord import app_commands
 from bot import (
     HelpView,
-    format_target,
-    get_user_target,
 )
 from kotone.client import (
     SLASH_COMMANDS,
@@ -27,6 +25,10 @@ from kotone.cooldowns import (
 )
 from kotone.db import (
     get_db,
+)
+from kotone.game import (
+    format_target,
+    get_user_target,
 )
 from typing import Literal
 

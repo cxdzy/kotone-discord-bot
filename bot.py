@@ -37,7 +37,6 @@ from kotone.config import (
     RARITIES,
     SPIN_BOARD_SIZE,
     SPIN_BOMB_SLOTS,
-    SPIN_DAILY_LIMIT,
     SPIN_REWARD_COUNTS,
     S_MEMBERS,
     S_ORDER,
@@ -48,160 +47,15 @@ from kotone.db import get_db
 from kotone.cooldowns import (
     check_cooldown,
     cooldown_reminder_loop,
-    next_local_midnight_timestamp,
-    schedule_cooldown_reminder,
     set_cooldown,
 )
 
-from kotone.shop import DROP_BOOSTER_RARITY_MULTIPLIER
 
-# Generate a random card with guaranteed uniqueness
-def get_user_target(user_id):
-    """Return the user's target preference, if one is set."""
-    with get_db() as conn:
-        c = conn.cursor()
-        c.execute(
-            "SELECT era, member_code, rarity FROM user_targets WHERE user_id=?",
-            (user_id,),
-        )
-        result = c.fetchone()
-    if result:
-        return {"era": result[0], "member_code": result[1], "rarity": result[2]}
-    return None
-
-def generate_card(
-    max_attempts=100,
-    target=None,
-    forced_rarity=None,
-    connection=None,
-    rarity_boost=False,
-):
-    """Generate a unique card, optionally targeted or restricted to one rarity."""
-    for attempt in range(max_attempts):
-        candidates = []
-        for rarity, rarity_weight in RARITIES.items():
-            if forced_rarity and rarity != forced_rarity:
-                continue
-            for era, era_data in ERAS.items():
-                member_weight = 1 / len(ERAS) / len(era_data["members"])
-                for member_code in era_data["members"]:
-                    candidates.append((
-                        rarity,
-                        era,
-                        member_code,
-                        rarity_weight / sum(RARITIES.values()) * member_weight,
-                    ))
-
-        weights = [candidate[3] for candidate in candidates]
-        if rarity_boost:
-            weights = [
-                weight * (
-                    DROP_BOOSTER_RARITY_MULTIPLIER
-                    if candidate[0] != "Common"
-                    else 1
-                )
-                for candidate, weight in zip(candidates, weights)
-            ]
-            total_weight = sum(weights)
-            weights = [weight / total_weight for weight in weights]
-        if target:
-            target_indices = [
-                index for index, (rarity, era, member_code, _) in enumerate(candidates)
-                if member_code == target["member_code"]
-                and (target["era"] is None or era == target["era"])
-                and (target["rarity"] is None or rarity == target["rarity"])
-            ]
-            if target_indices:
-                target_probability = sum(weights[index] for index in target_indices)
-                if target.get("rarity") == "Mythic":
-                    # A Mythic target must not increase the overall Mythic drop rate.
-                    other_indices = [
-                        index for index, candidate in enumerate(candidates)
-                        if candidate[0] == "Mythic" and index not in target_indices
-                    ]
-                    other_probability = sum(weights[index] for index in other_indices)
-                    rarity_probability = target_probability + other_probability
-                    boosted_probability = min(
-                        target_probability + rarity_probability * 0.01,
-                        rarity_probability,
-                    )
-                    remaining_probability = rarity_probability - boosted_probability
-                else:
-                    boosted_probability = min(target_probability + 0.01, 1.0)
-                    other_indices = [
-                        index for index in range(len(weights))
-                        if index not in target_indices
-                    ]
-                    other_probability = 1 - target_probability
-                    remaining_probability = 1 - boosted_probability
-                target_scale = boosted_probability / target_probability
-                other_scale = (
-                    remaining_probability / other_probability
-                    if other_probability else 0
-                )
-                for index in target_indices:
-                    weights[index] *= target_scale
-                for index in other_indices:
-                    weights[index] *= other_scale
-
-        rarity, era, member_code = random.choices(
-            [
-                (candidate[0], candidate[1], candidate[2])
-                for candidate in candidates
-            ],
-            weights=weights,
-            k=1,
-        )[0]
-        
-        # Generate serial
-        chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        random_part = ''.join(random.choices(chars, k=5))
-        serial = f"{member_code}-{random_part}"
-        
-        # Check if serial already exists
-        if connection is None:
-            with get_db() as conn:
-                c = conn.cursor()
-                c.execute("SELECT serial FROM cards WHERE serial=?", (serial,))
-                serial_exists = c.fetchone()
-        else:
-            c = connection.cursor()
-            c.execute("SELECT serial FROM cards WHERE serial=?", (serial,))
-            serial_exists = c.fetchone()
-
-        if not serial_exists:
-            # Serial is unique
-            return {
-                "serial": serial,
-                "member_code": member_code,
-                "era": era,
-                "name": ERAS[era]["members"][member_code]["name"],
-                "full_name": ERAS[era]["members"][member_code]["full_name"],
-                "rarity": rarity
-            }
-    
-    # If we somehow can't generate unique serial after max_attempts
-    raise RuntimeError("Failed to generate unique card serial")
-
-# Generate multiple unique cards
-def generate_unique_cards(count=3, target=None, rarity_boost=False):
-    """Generate unique cards, optionally applying a small target bonus."""
-    cards = []
-    generated_serials = set()
-    
-    for _ in range(count):
-        max_attempts = 100
-        for attempt in range(max_attempts):
-            card = generate_card(target=target, rarity_boost=rarity_boost)
-            if card['serial'] not in generated_serials:
-                cards.append(card)
-                generated_serials.add(card['serial'])
-                break
-            
-            if attempt == max_attempts - 1:
-                raise Exception("Failed to generate unique cards")
-    
-    return cards
+from kotone.game import (
+    generate_card,
+    merge_owned_cards,
+    start_card_spin,
+)
 
 # Get image URL for a card
 def get_card_image(era, member_code, rarity, animated=False):
@@ -571,21 +425,6 @@ class ClaimButton(Button):
                 ephemeral=True
             )
 
-# Pagination for inventory
-def build_spin_outcomes(wager_rarity):
-    reward_counts = SPIN_REWARD_COUNTS[wager_rarity]
-    outcomes = [
-        rarity
-        for rarity, count in reward_counts.items()
-        for _ in range(count)
-    ]
-    outcomes.extend([None] * SPIN_BOMB_SLOTS)
-    if len(outcomes) != SPIN_BOARD_SIZE:
-        raise RuntimeError(
-            f"Spin outcomes must fill exactly {SPIN_BOARD_SIZE} buttons."
-        )
-    random.shuffle(outcomes)
-    return outcomes
 
 
 class SpinChoiceButton(Button):
@@ -766,95 +605,6 @@ class SpinView(View):
                 await self.message.edit(embed=embed, view=self)
 
 
-def start_card_spin(user_id, serial):
-    today = datetime.date.today().isoformat()
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("BEGIN IMMEDIATE")
-        cursor.execute(
-            '''SELECT member_code, era, rarity, in_binder
-               FROM cards WHERE serial=? AND owner_id=?''',
-            (serial, user_id),
-        )
-        card_row = cursor.fetchone()
-        if card_row is None:
-            raise ValueError("You don't own a card with that serial anymore.")
-        member_code, era, rarity, in_binder = card_row
-        if in_binder:
-            raise ValueError(
-                "That card is in your binder. Remove it with "
-                "`/binder remove` before spinning."
-            )
-        if rarity not in SPIN_REWARD_COUNTS:
-            raise ValueError("That card has an unsupported rarity and can't be spun.")
-
-        cursor.execute(
-            "SELECT 1 FROM market_listings WHERE card_serial=?",
-            (serial,),
-        )
-        if cursor.fetchone():
-            raise ValueError(
-                "Unlist that card from the market before using it for a spin."
-            )
-
-        cursor.execute(
-            "SELECT spin_date, spins FROM spin_usage WHERE user_id=?",
-            (user_id,),
-        )
-        usage_row = cursor.fetchone()
-        spins_used = (
-            usage_row[1]
-            if usage_row and usage_row[0] == today
-            else 0
-        )
-        if spins_used >= SPIN_DAILY_LIMIT:
-            raise ValueError(
-                f"You've used all **{SPIN_DAILY_LIMIT} spins** for today. "
-                "Your limit resets at local midnight."
-            )
-
-        member = ERAS[era]["members"][member_code]
-        wagered_card = {
-            "serial": serial,
-            "member_code": member_code,
-            "era": era,
-            "rarity": rarity,
-            "name": member["name"],
-            "full_name": member["full_name"],
-        }
-        outcomes = build_spin_outcomes(rarity)
-        cursor.execute(
-            "DELETE FROM cards WHERE serial=? AND owner_id=?",
-            (serial, user_id),
-        )
-        if cursor.rowcount != 1:
-            raise RuntimeError("The wagered card changed before the spin started.")
-
-        spins_used += 1
-        cursor.execute(
-            '''INSERT INTO spin_usage (user_id, spin_date, spins)
-               VALUES (?, ?, ?)
-               ON CONFLICT(user_id) DO UPDATE SET
-                   spin_date=excluded.spin_date,
-                   spins=excluded.spins''',
-            (user_id, today, spins_used),
-        )
-        if spins_used == SPIN_DAILY_LIMIT:
-            reset_at = next_local_midnight_timestamp(today)
-            cursor.execute(
-                '''INSERT OR REPLACE INTO cooldowns
-                   (user_id, cooldown_type, expires_at)
-                   VALUES (?, 'spin', ?)''',
-                (user_id, reset_at),
-            )
-            schedule_cooldown_reminder(
-                cursor,
-                user_id,
-                "spin",
-                reset_at,
-            )
-
-    return wagered_card, outcomes, SPIN_DAILY_LIMIT - spins_used
 
 
 class SpinConfirmationView(View):
@@ -1199,113 +949,6 @@ async def on_ready():
 
 
 
-MERGE_UPGRADES = {
-    "Common": "Rare",
-    "Rare": "Epic",
-    "Epic": "Legendary",
-}
-
-def get_merge_selection(cursor, user_id, serials):
-    required_count = len(serials)
-    if required_count not in {9, 10}:
-        raise ValueError("A merge requires 10 cards, or 9 with an activated Merge Discount Token.")
-    if required_count == 9:
-        cursor.execute(
-            '''SELECT merge_discounts FROM user_item_effects
-               WHERE user_id=?''',
-            (user_id,),
-        )
-        discount = cursor.fetchone()
-        if discount is None or discount[0] <= 0:
-            raise ValueError(
-                "You need to activate a Merge Discount Token with `/use` and `merge` "
-                "before merging 9 cards."
-            )
-
-    placeholders = ",".join("?" for _ in serials)
-    cursor.execute(
-        f'''SELECT serial, member_code, era, rarity, owner_id, in_binder
-            FROM cards WHERE serial IN ({placeholders})''',
-        serials,
-    )
-    cards_by_serial = {row[0]: row for row in cursor.fetchall()}
-    if len(cards_by_serial) != required_count:
-        raise ValueError("One or more of those card serials could not be found.")
-
-    selected_cards = [cards_by_serial[serial] for serial in serials]
-    if any(card[4] != user_id for card in selected_cards):
-        raise ValueError("You can only merge cards that you own.")
-    binder_serials = [card[0] for card in selected_cards if card[5]]
-    if binder_serials:
-        raise ValueError(
-            "Remove these cards from your binder before merging: "
-            + ", ".join(f"`{serial}`" for serial in binder_serials)
-        )
-
-    selected_rarity = selected_cards[0][3]
-    if any(card[3] != selected_rarity for card in selected_cards):
-        raise ValueError(f"All {required_count} cards must have the same rarity.")
-    if selected_rarity not in MERGE_UPGRADES:
-        raise ValueError(
-            f"{selected_rarity} cards cannot be merged into a higher rarity."
-        )
-
-    cursor.execute(
-        f'''SELECT card_serial FROM market_listings
-            WHERE card_serial IN ({placeholders})''',
-        serials,
-    )
-    listed_serials = [row[0] for row in cursor.fetchall()]
-    if listed_serials:
-        raise ValueError(
-            "Unlist these cards before merging them: "
-            + ", ".join(f"`{serial}`" for serial in listed_serials)
-        )
-
-    return selected_rarity, selected_cards
-
-def merge_owned_cards(user_id, serials):
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute("BEGIN IMMEDIATE")
-        selected_rarity, _ = get_merge_selection(cursor, user_id, serials)
-        if len(serials) == 9:
-            cursor.execute(
-                '''UPDATE user_item_effects
-                   SET merge_discounts=merge_discounts-1
-                   WHERE user_id=? AND merge_discounts>0''',
-                (user_id,),
-            )
-            if cursor.rowcount != 1:
-                raise RuntimeError("The Merge Discount Token is no longer available.")
-        merged_card = generate_card(
-            forced_rarity=MERGE_UPGRADES[selected_rarity],
-            connection=conn,
-        )
-        delete_placeholders = ",".join("?" for _ in serials)
-        cursor.execute(
-            f'''DELETE FROM cards
-                WHERE owner_id=? AND serial IN ({delete_placeholders})''',
-            [user_id, *serials],
-        )
-        if cursor.rowcount != len(serials):
-            raise RuntimeError("The selected cards changed during the merge.")
-
-        cursor.execute(
-            '''INSERT INTO cards
-               (serial, member_code, era, rarity, owner_id, obtained_at)
-               VALUES (?, ?, ?, ?, ?, ?)''',
-            (
-                merged_card["serial"],
-                merged_card["member_code"],
-                merged_card["era"],
-                merged_card["rarity"],
-                user_id,
-                str(datetime.datetime.now()),
-            ),
-        )
-
-    return merged_card
 
 class MergeConfirmationView(View):
     def __init__(self, user_id, serials):
@@ -1592,63 +1235,6 @@ class CollectionView(View):
 
 
 
-def format_target(target):
-    member_data = ERAS.get(target["era"], {}).get("members", {}).get(
-        target["member_code"]
-    )
-    if member_data is None:
-        member_data = next(
-            (
-                era_data["members"][target["member_code"]]
-                for era_data in ERAS.values()
-                if target["member_code"] in era_data["members"]
-            ),
-            None,
-        )
-    if member_data is None:
-        return "Unknown member"
-
-    parts = []
-    if target["rarity"]:
-        parts.append(target["rarity"])
-    parts.append(member_data["full_name"])
-    if target["era"]:
-        parts.append(ERAS[target["era"]]["name"])
-    else:
-        parts.append("any era")
-    return " ".join(parts)
-
-def parse_biases(query):
-    """Resolve bias names, short names, and member codes in the supplied order."""
-    aliases = {}
-    for index, member_code in enumerate(S_ORDER, start=1):
-        member_data = S_MEMBERS[member_code]
-        for alias in (
-            member_code,
-            f"s{index}",
-            member_data["name"],
-            member_data["full_name"],
-        ):
-            normalized_alias = alias.casefold().split()
-            aliases[tuple(normalized_alias)] = member_code
-
-    tokens = query.casefold().replace(",", " ").split()
-    matched_codes = []
-    position = 0
-    while position < len(tokens):
-        matches = [
-            (alias_tokens, member_code)
-            for alias_tokens, member_code in aliases.items()
-            if tokens[position:position + len(alias_tokens)] == list(alias_tokens)
-        ]
-        if not matches:
-            raise ValueError(f"Couldn't identify bias name starting with `{tokens[position]}`.")
-
-        alias_tokens, member_code = max(matches, key=lambda match: len(match[0]))
-        matched_codes.append(member_code)
-        position += len(alias_tokens)
-
-    return sorted(set(matched_codes), key=S_ORDER.index)
 
 
 

@@ -4,10 +4,6 @@ import random
 import sqlite3
 import time
 import discord
-from bot import (
-    generate_card,
-    get_user_target,
-)
 from kotone.client import (
     slash_command,
 )
@@ -16,6 +12,10 @@ from kotone.cooldowns import (
 )
 from kotone.db import (
     get_db,
+)
+from kotone.game import (
+    generate_card,
+    get_user_target,
 )
 from kotone.shop import (
     SHOP_ITEMS,
