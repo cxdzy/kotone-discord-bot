@@ -9,7 +9,6 @@ from bot import (
     SHOP_ITEM_ALIASES,
     advance_daily_streak,
     generate_card,
-    get_db,
     get_user_target,
     purchase_shop_item,
     schedule_cooldown_reminder,
@@ -17,6 +16,9 @@ from bot import (
 )
 from kotone.client import (
     slash_command,
+)
+from kotone.db import (
+    get_db,
 )
 
 @slash_command(name='daily')

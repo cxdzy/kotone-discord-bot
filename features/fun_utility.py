@@ -8,7 +8,6 @@ from bot import (
     COOLDOWN_REMINDER_TYPES,
     HelpView,
     format_target,
-    get_db,
     get_user_target,
     next_local_midnight_timestamp,
 )
@@ -23,6 +22,9 @@ from kotone.config import (
     SPIN_DAILY_LIMIT,
     S_MEMBERS,
     S_ORDER,
+)
+from kotone.db import (
+    get_db,
 )
 from typing import Literal
 

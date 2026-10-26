@@ -26,7 +26,6 @@ from bot import (
     format_target,
     generate_unique_cards,
     get_card_image,
-    get_db,
     get_merge_selection,
     get_user_target,
     has_active_drop_booster,
@@ -42,6 +41,9 @@ from kotone.config import (
     SPIN_REWARD_COUNTS,
     S_MEMBERS,
     S_ORDER,
+)
+from kotone.db import (
+    get_db,
 )
 from typing import Literal
 from io import BytesIO
