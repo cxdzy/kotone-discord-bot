@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [feature/daeyeyo]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - name: Check out PR code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff==0.17.2
+
+      - name: Compile check
+        run: python -m compileall -q bot.py eras.py features
+
+      # Only real errors: syntax (E9), bad string formatting/comparisons (F63),
+      # invalid statements (F7), undefined names (F82). F403/F405 are ignored
+      # because features/ use "from bot import *" (not selected anyway).
+      # ci/ is included so the smoke script is linted too.
+      - name: Ruff (errors only)
+        run: >
+          ruff check --select E9,F63,F7,F82 --ignore F403,F405
+          --output-format=github bot.py eras.py features ci
+
+      - name: Smoke test (PR code)
+        id: pr_smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(python ci/smoke_test.py)
+          n=$(printf '%s\n' "$out" | sed -n 's/^COMMANDS: //p' | tail -n 1)
+          echo "PR commands: $n"
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+
+      - name: Check out base branch into ./base
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'feature/daeyeyo' }}
+          path: base
+          persist-credentials: false
+
+      # The base may not contain ci/smoke_test.py, so the PR's copy of the
+      # script is run against the base folder. Base requirements are installed
+      # into the same Python environment (after the PR smoke test already ran).
+      - name: Smoke test (base code)
+        id: base_smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          pip install -r base/requirements.txt
+          out=$(python ci/smoke_test.py base)
+          n=$(printf '%s\n' "$out" | sed -n 's/^COMMANDS: //p' | tail -n 1)
+          echo "base commands: $n"
+          echo "count=$n" >> "$GITHUB_OUTPUT"
+
+      - name: Compare command counts
+        shell: bash
+        env:
+          PR_COUNT: ${{ steps.pr_smoke.outputs.count }}
+          BASE_COUNT: ${{ steps.base_smoke.outputs.count }}
+        run: |
+          set -euo pipefail
+          echo "PR commands: ${PR_COUNT:-}, base commands: ${BASE_COUNT:-}"
+          for v in "${PR_COUNT:-}" "${BASE_COUNT:-}"; do
+            if ! [[ "$v" =~ ^[0-9]+$ ]] || [ "$v" -eq 0 ]; then
+              echo "Command count is empty, non-numeric or zero: '$v'"
+              exit 1
+            fi
+          done
+          if [ "$PR_COUNT" -lt "$BASE_COUNT" ]; then
+            echo "PR has fewer commands than base ($PR_COUNT < $BASE_COUNT)"
+            exit 1
+          fi
