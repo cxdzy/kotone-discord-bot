@@ -1,26 +1,9 @@
-import discord
-from discord import app_commands
-from discord.ext import tasks
-import random
-import sqlite3
-import datetime
-import asyncio
-import inspect
-import time
+import ctypes
 import os
 import sys
-import re
-import ctypes
-from concurrent.futures import ThreadPoolExecutor
-from io import BytesIO
-from types import SimpleNamespace
-from urllib.error import URLError
-from urllib.request import Request, urlopen
-from discord.ui import Button, View
-from contextlib import contextmanager
-from PIL import Image, ImageDraw, ImageOps
+
+import discord
 from dotenv import load_dotenv
-from eras import ERA_ALIASES, ERA_ALIAS_LOOKUP, ERAS, normalize_era_alias
 
 # Reuse this module when feature files import shared bot state during script startup.
 sys.modules.setdefault("bot", sys.modules[__name__])
@@ -28,71 +11,8 @@ sys.modules.setdefault("bot", sys.modules[__name__])
 load_dotenv()
 
 from kotone.client import bot
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import kotone.events
+
 # Load command modules so all slash commands are registered before the bot starts.
 import features
 
