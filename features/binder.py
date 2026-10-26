@@ -9,15 +9,17 @@ from eras import (
     normalize_era_alias,
 )
 from bot import (
-    RARITIES,
-    S_MEMBERS,
-    S_ORDER,
     get_db,
 )
 from kotone.client import (
     SLASH_COMMANDS,
     bot,
     slash_command,
+)
+from kotone.config import (
+    RARITIES,
+    S_MEMBERS,
+    S_ORDER,
 )
 
 BINDER_PAGE_SIZE = 5

@@ -7,11 +7,6 @@ from discord import app_commands
 from bot import (
     COOLDOWN_REMINDER_TYPES,
     HelpView,
-    MINIGAMES,
-    RARITIES,
-    SPIN_DAILY_LIMIT,
-    S_MEMBERS,
-    S_ORDER,
     format_target,
     get_db,
     get_user_target,
@@ -21,6 +16,13 @@ from kotone.client import (
     SLASH_COMMANDS,
     SLASH_COMMAND_ALIASES,
     slash_command,
+)
+from kotone.config import (
+    MINIGAMES,
+    RARITIES,
+    SPIN_DAILY_LIMIT,
+    S_MEMBERS,
+    S_ORDER,
 )
 from typing import Literal
 

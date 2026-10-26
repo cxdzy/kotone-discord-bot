@@ -17,11 +17,6 @@ from bot import (
     InventoryView,
     MERGE_UPGRADES,
     MergeConfirmationView,
-    RARITIES,
-    SPIN_DAILY_LIMIT,
-    SPIN_REWARD_COUNTS,
-    S_MEMBERS,
-    S_ORDER,
     SpinConfirmationView,
     check_cooldown,
     create_collection_embed,
@@ -40,6 +35,13 @@ from bot import (
 )
 from kotone.client import (
     slash_command,
+)
+from kotone.config import (
+    RARITIES,
+    SPIN_DAILY_LIMIT,
+    SPIN_REWARD_COUNTS,
+    S_MEMBERS,
+    S_ORDER,
 )
 from typing import Literal
 from io import BytesIO
