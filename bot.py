@@ -1,12 +1,8 @@
 import ctypes
 import os
-import sys
 
 import discord
 from dotenv import load_dotenv
-
-# Reuse this module when feature files import shared bot state during script startup.
-sys.modules.setdefault("bot", sys.modules[__name__])
 
 load_dotenv()
 
