@@ -4,11 +4,11 @@ import random
 import sqlite3
 import time
 import discord
-from bot import (
-    schedule_cooldown_reminder,
-)
 from kotone.client import (
     slash_command,
+)
+from kotone.cooldowns import (
+    schedule_cooldown_reminder,
 )
 from kotone.db import (
     get_db,

@@ -18,7 +18,6 @@ from bot import (
     MERGE_UPGRADES,
     MergeConfirmationView,
     SpinConfirmationView,
-    check_cooldown,
     create_collection_embed,
     create_collection_embed_image,
     create_drop_embed,
@@ -30,7 +29,6 @@ from bot import (
     get_user_target,
     has_active_drop_booster,
     parse_biases,
-    schedule_cooldown_reminder,
 )
 from kotone.client import (
     slash_command,
@@ -41,6 +39,10 @@ from kotone.config import (
     SPIN_REWARD_COUNTS,
     S_MEMBERS,
     S_ORDER,
+)
+from kotone.cooldowns import (
+    check_cooldown,
+    schedule_cooldown_reminder,
 )
 from kotone.db import (
     get_db,

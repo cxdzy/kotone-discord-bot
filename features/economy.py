@@ -11,11 +11,13 @@ from bot import (
     generate_card,
     get_user_target,
     purchase_shop_item,
-    schedule_cooldown_reminder,
     use_shop_item,
 )
 from kotone.client import (
     slash_command,
+)
+from kotone.cooldowns import (
+    schedule_cooldown_reminder,
 )
 from kotone.db import (
     get_db,

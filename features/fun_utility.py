@@ -5,11 +5,9 @@ import time
 import discord
 from discord import app_commands
 from bot import (
-    COOLDOWN_REMINDER_TYPES,
     HelpView,
     format_target,
     get_user_target,
-    next_local_midnight_timestamp,
 )
 from kotone.client import (
     SLASH_COMMANDS,
@@ -22,6 +20,10 @@ from kotone.config import (
     SPIN_DAILY_LIMIT,
     S_MEMBERS,
     S_ORDER,
+)
+from kotone.cooldowns import (
+    COOLDOWN_REMINDER_TYPES,
+    next_local_midnight_timestamp,
 )
 from kotone.db import (
     get_db,
