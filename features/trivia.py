@@ -7,6 +7,8 @@ import discord
 from bot import (
     get_db,
     schedule_cooldown_reminder,
+)
+from kotone.client import (
     slash_command,
 )
 import json

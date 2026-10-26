@@ -5,6 +5,8 @@ from discord.ui import Button, View
 from eras import ERAS
 from bot import (
     get_db,
+)
+from kotone.client import (
     slash_command,
 )
 

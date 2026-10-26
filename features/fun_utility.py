@@ -9,8 +9,6 @@ from bot import (
     HelpView,
     MINIGAMES,
     RARITIES,
-    SLASH_COMMANDS,
-    SLASH_COMMAND_ALIASES,
     SPIN_DAILY_LIMIT,
     S_MEMBERS,
     S_ORDER,
@@ -18,6 +16,10 @@ from bot import (
     get_db,
     get_user_target,
     next_local_midnight_timestamp,
+)
+from kotone.client import (
+    SLASH_COMMANDS,
+    SLASH_COMMAND_ALIASES,
     slash_command,
 )
 from typing import Literal

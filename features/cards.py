@@ -37,6 +37,8 @@ from bot import (
     has_active_drop_booster,
     parse_biases,
     schedule_cooldown_reminder,
+)
+from kotone.client import (
     slash_command,
 )
 from typing import Literal

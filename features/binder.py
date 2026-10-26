@@ -10,11 +10,13 @@ from eras import (
 )
 from bot import (
     RARITIES,
-    SLASH_COMMANDS,
     S_MEMBERS,
     S_ORDER,
-    bot,
     get_db,
+)
+from kotone.client import (
+    SLASH_COMMANDS,
+    bot,
     slash_command,
 )
 

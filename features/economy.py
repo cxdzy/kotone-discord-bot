@@ -13,8 +13,10 @@ from bot import (
     get_user_target,
     purchase_shop_item,
     schedule_cooldown_reminder,
-    slash_command,
     use_shop_item,
+)
+from kotone.client import (
+    slash_command,
 )
 
 @slash_command(name='daily')
