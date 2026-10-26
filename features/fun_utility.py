@@ -4,9 +4,6 @@ import sqlite3
 import time
 import discord
 from discord import app_commands
-from bot import (
-    HelpView,
-)
 from kotone.client import (
     SLASH_COMMANDS,
     SLASH_COMMAND_ALIASES,
@@ -29,6 +26,9 @@ from kotone.db import (
 from kotone.game import (
     format_target,
     get_user_target,
+)
+from kotone.views import (
+    HelpView,
 )
 from typing import Literal
 

@@ -10,14 +10,6 @@ from eras import (
     ERA_ALIAS_LOOKUP,
     normalize_era_alias,
 )
-from bot import (
-    ClaimButton,
-    CollectionView,
-    InventoryView,
-    MergeConfirmationView,
-    SpinConfirmationView,
-    create_collection_embed,
-)
 from kotone.client import (
     slash_command,
 )
@@ -52,6 +44,14 @@ from kotone.images import (
 )
 from kotone.shop import (
     has_active_drop_booster,
+)
+from kotone.views import (
+    ClaimButton,
+    CollectionView,
+    InventoryView,
+    MergeConfirmationView,
+    SpinConfirmationView,
+    create_collection_embed,
 )
 from typing import Literal
 from io import BytesIO
