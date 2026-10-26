@@ -1,4 +1,25 @@
-from bot import *
+import datetime
+import random
+import sqlite3
+import time
+import discord
+from discord import app_commands
+from bot import (
+    COOLDOWN_REMINDER_TYPES,
+    HelpView,
+    MINIGAMES,
+    RARITIES,
+    SLASH_COMMANDS,
+    SLASH_COMMAND_ALIASES,
+    SPIN_DAILY_LIMIT,
+    S_MEMBERS,
+    S_ORDER,
+    format_target,
+    get_db,
+    get_user_target,
+    next_local_midnight_timestamp,
+    slash_command,
+)
 from typing import Literal
 
 @slash_command(name='8ball')
