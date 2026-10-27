@@ -997,8 +997,9 @@ HELP_CATEGORIES = (
     (
         "🎴 Cards",
         (
-            "drop", "spin", "inventory", "view", "merge", "collection", "dupes",
-            "binder", "give", "target", "bias", "bio", "profile", "stats",
+            "drop", "spin", "inventory", "view", "train", "perform", "merge",
+            "collection", "dupes", "binder", "give", "target", "bias", "bio",
+            "profile", "stats",
         ),
     ),
     ("🏪 Market", ("market", "list", "unlist", "buy")),

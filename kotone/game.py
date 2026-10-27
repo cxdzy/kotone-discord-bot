@@ -1,14 +1,27 @@
 import datetime
 import random
+import time
 from eras import ERAS
 from kotone.config import (
+    MEMBER_SPECIALTY,
+    PERFORM_BASE_SCORE,
+    PERFORM_COOLDOWN_SECONDS,
+    PERFORM_GRADE_MULTIPLIERS,
+    PERFORM_RARITY_MULTIPLIERS,
+    PERFORM_SKILL_WEIGHT,
     RARITIES,
+    RARITY_ABILITY_ROLLS,
     SPIN_BOARD_SIZE,
     SPIN_BOMB_SLOTS,
     SPIN_DAILY_LIMIT,
     SPIN_REWARD_COUNTS,
     S_MEMBERS,
     S_ORDER,
+    TRAIN_COOLDOWN_SECONDS,
+    TRAIN_GAIN_MAX,
+    TRAIN_GAIN_MIN,
+    TRAIN_PERFECT_BONUS,
+    TRAIN_PERFECT_CHANCE,
 )
 from kotone.cooldowns import (
     next_local_midnight_timestamp,
@@ -171,6 +184,292 @@ def generate_unique_cards(count=3, target=None, rarity_boost=False):
     return cards
 
 
+def format_duration(seconds):
+    seconds = max(0, int(seconds))
+    days, remainder = divmod(seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if seconds or not parts:
+        parts.append(f"{seconds}s")
+    return " ".join(parts)
+
+
+def _roll_skill(member_code, rarity):
+    skill = MEMBER_SPECIALTY.get(member_code, "Vocals")
+    rolls = RARITY_ABILITY_ROLLS.get(
+        rarity,
+        RARITY_ABILITY_ROLLS["Common"],
+    )
+    skill_min, skill_max = rolls["specialty"]
+    return skill, random.randint(skill_min, skill_max)
+
+
+def ensure_card_skill(cursor, serial, member_code, rarity):
+    cursor.execute(
+        '''SELECT skill, points, training_sessions, performances,
+                  last_trained
+           FROM card_skill_points WHERE card_serial=?''',
+        (serial,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        skill, points = _roll_skill(member_code, rarity)
+        cursor.execute(
+            '''INSERT OR IGNORE INTO card_skill_points
+               (card_serial, skill, points)
+               VALUES (?, ?, ?)''',
+            (serial, skill, points),
+        )
+        cursor.execute(
+            '''SELECT skill, points, training_sessions, performances,
+                      last_trained
+               FROM card_skill_points WHERE card_serial=?''',
+            (serial,),
+        )
+        row = cursor.fetchone()
+
+    skill, points, training_sessions, performances, last_trained = row
+    rolls = RARITY_ABILITY_ROLLS.get(
+        rarity,
+        RARITY_ABILITY_ROLLS["Common"],
+    )
+    return {
+        "card_serial": serial,
+        "skill": skill,
+        "points": points,
+        "cap": rolls["cap"],
+        "training_sessions": training_sessions,
+        "performances": performances,
+        "last_trained": last_trained,
+    }
+
+
+def _get_active_cooldown(cursor, user_id, cooldown_type):
+    cursor.execute(
+        '''SELECT expires_at FROM cooldowns
+           WHERE user_id=? AND cooldown_type=?''',
+        (user_id, cooldown_type),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        return 0
+    return max(0, int(row[0] - time.time()))
+
+
+def _set_user_cooldown(cursor, user_id, cooldown_type, duration):
+    expires_at = time.time() + duration
+    cursor.execute(
+        '''INSERT OR REPLACE INTO cooldowns
+           (user_id, cooldown_type, expires_at)
+           VALUES (?, ?, ?)''',
+        (user_id, cooldown_type, expires_at),
+    )
+    schedule_cooldown_reminder(
+        cursor,
+        user_id,
+        cooldown_type,
+        expires_at,
+    )
+    return expires_at
+
+
+def _get_card_for_ability(cursor, user_id, serial, action):
+    cursor.execute(
+        '''SELECT member_code, era, rarity FROM cards
+           WHERE serial=? AND owner_id=?''',
+        (serial, user_id),
+    )
+    card = cursor.fetchone()
+    if card is None:
+        raise ValueError("You don't own a card with that serial.")
+    cursor.execute(
+        "SELECT 1 FROM market_listings WHERE card_serial=?",
+        (serial,),
+    )
+    if cursor.fetchone():
+        raise ValueError(
+            f"Unlist that card from the market before {action}."
+        )
+    return card
+
+
+def train_card(user_id, serial):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+
+        remaining = _get_active_cooldown(cursor, user_id, "train")
+        if remaining > 0:
+            raise ValueError(
+                "Your training cooldown is still active for "
+                f"**{format_duration(remaining)}**."
+            )
+
+        member_code, era, rarity = _get_card_for_ability(
+            cursor,
+            user_id,
+            serial,
+            "training it",
+        )
+        member = ERAS[era]["members"][member_code]
+        era_name = ERAS[era]["name"]
+        skills = ensure_card_skill(cursor, serial, member_code, rarity)
+        skill = skills["skill"]
+        old_points = skills["points"]
+        cap = skills["cap"]
+        if old_points >= cap:
+            raise ValueError(
+                f"{skill} is already at the {rarity} cap of **{cap}**."
+            )
+
+        gain = random.randint(TRAIN_GAIN_MIN, TRAIN_GAIN_MAX)
+        perfect = random.random() < TRAIN_PERFECT_CHANCE
+        if perfect:
+            gain += TRAIN_PERFECT_BONUS
+        new_points = min(cap, old_points + gain)
+        actual_gain = new_points - old_points
+        training_sessions = skills["training_sessions"] + 1
+
+        cursor.execute(
+            '''UPDATE card_skill_points
+               SET points=?,
+                   training_sessions=?,
+                   last_trained=?
+               WHERE card_serial=?''',
+            (new_points, training_sessions, time.time(), serial),
+        )
+        expires_at = _set_user_cooldown(
+            cursor,
+            user_id,
+            "train",
+            TRAIN_COOLDOWN_SECONDS,
+        )
+
+    return {
+        "serial": serial,
+        "member_code": member_code,
+        "name": member["name"],
+        "full_name": member["full_name"],
+        "era": era,
+        "era_name": era_name,
+        "rarity": rarity,
+        "skill": skill,
+        "old_points": old_points,
+        "new_points": new_points,
+        "gain": actual_gain,
+        "cap": cap,
+        "perfect": perfect,
+        "training_sessions": training_sessions,
+        "points": new_points,
+        "cap_reached": new_points >= cap,
+        "cooldown_until": expires_at,
+    }
+
+
+def perform_card(user_id, username, serial):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("BEGIN IMMEDIATE")
+
+        remaining = _get_active_cooldown(cursor, user_id, "perform")
+        if remaining > 0:
+            raise ValueError(
+                "Your performance cooldown is still active for "
+                f"**{format_duration(remaining)}**."
+            )
+
+        member_code, era, rarity = _get_card_for_ability(
+            cursor,
+            user_id,
+            serial,
+            "performing with it",
+        )
+        member = ERAS[era]["members"][member_code]
+        era_name = ERAS[era]["name"]
+        skills = ensure_card_skill(cursor, serial, member_code, rarity)
+        skill = skills["skill"]
+        points = skills["points"]
+        cap = skills["cap"]
+
+        progress = points / cap
+        if progress >= 0.9:
+            grade = "S"
+        elif progress >= 0.7:
+            grade = "A"
+        elif progress >= 0.45:
+            grade = "B"
+        else:
+            grade = "C"
+
+        score = PERFORM_BASE_SCORE + points * PERFORM_SKILL_WEIGHT
+        payout = round(
+            score
+            * PERFORM_RARITY_MULTIPLIERS.get(rarity, 1.0)
+            * PERFORM_GRADE_MULTIPLIERS[grade]
+            * random.uniform(0.9, 1.1)
+        )
+        payout = max(1, payout)
+        performances = skills["performances"] + 1
+
+        cursor.execute(
+            '''UPDATE card_skill_points
+               SET performances=?
+               WHERE card_serial=?''',
+            (performances, serial),
+        )
+        cursor.execute(
+            "SELECT como FROM users WHERE user_id=?",
+            (user_id,),
+        )
+        user = cursor.fetchone()
+        if user is None:
+            cursor.execute(
+                '''INSERT INTO users (user_id, username, como)
+                   VALUES (?, ?, ?)''',
+                (user_id, username, payout),
+            )
+            new_balance = payout
+        else:
+            cursor.execute(
+                '''UPDATE users SET username=?, como=como+?
+                   WHERE user_id=?''',
+                (username, payout, user_id),
+            )
+            new_balance = user[0] + payout
+
+        expires_at = _set_user_cooldown(
+            cursor,
+            user_id,
+            "perform",
+            PERFORM_COOLDOWN_SECONDS,
+        )
+
+    return {
+        "serial": serial,
+        "member_code": member_code,
+        "name": member["name"],
+        "full_name": member["full_name"],
+        "era": era,
+        "era_name": era_name,
+        "rarity": rarity,
+        "skill": skill,
+        "points": points,
+        "cap": cap,
+        "grade": grade,
+        "payout": payout,
+        "new_balance": new_balance,
+        "performances": performances,
+        "cooldown_until": expires_at,
+    }
+
+
 # Pagination for inventory
 def build_spin_outcomes(wager_rarity):
     reward_counts = SPIN_REWARD_COUNTS[wager_rarity]
@@ -251,6 +550,10 @@ def start_card_spin(user_id, serial):
         )
         if cursor.rowcount != 1:
             raise RuntimeError("The wagered card changed before the spin started.")
+        cursor.execute(
+            "DELETE FROM card_skill_points WHERE card_serial=?",
+            (serial,),
+        )
 
         spins_used += 1
         cursor.execute(
@@ -370,6 +673,11 @@ def merge_owned_cards(user_id, serials):
         )
         if cursor.rowcount != len(serials):
             raise RuntimeError("The selected cards changed during the merge.")
+        cursor.execute(
+            f'''DELETE FROM card_skill_points
+                WHERE card_serial IN ({delete_placeholders})''',
+            serials,
+        )
 
         cursor.execute(
             '''INSERT INTO cards

@@ -74,6 +74,60 @@ S_MEMBERS.update({
     "SEO": {"name": "Seoah", "full_name": "Jeong Haerin"},
     "JSH": {"name": "Jiyeon", "full_name": "Ji Suhyeon"},
 })
+MEMBER_SPECIALTY = {
+    "YSY": "Vocals",
+    "JHR": "Dance",
+    "LJW": "Vocals",
+    "KCY": "Vocals",
+    "KYY": "Vocals",
+    "KSM": "Vocals",
+    "KNK": "Rap",
+    "GYB": "Dance",
+    "KAE": "Dance",
+    "SDH": "Vocals",
+    "KTN": "Rap",
+    "KYJ": "Dance",
+    "HST": "Rap",
+    "PSH": "Rap",
+    "ZXY": "Dance",
+    "KMY": "Vocals",
+    "LYN": "Dance",
+    "JBN": "Vocals",
+    "JHY": "Vocals",
+    "SHI": "Vocals",
+    "KCW": "Vocals",
+    "SUL": "Dance",
+    "SEO": "Vocals",
+    "JSH": "Dance",
+}
+RARITY_ABILITY_ROLLS = {
+    "Common": {"specialty": (10, 15), "cap": 40},
+    "Rare": {"specialty": (15, 25), "cap": 60},
+    "Epic": {"specialty": (26, 42), "cap": 85},
+    "Legendary": {"specialty": (44, 66), "cap": 115},
+    "Mythic": {"specialty": (68, 92), "cap": 150},
+}
+TRAIN_COOLDOWN_SECONDS = 4 * 60 * 60
+TRAIN_GAIN_MIN = 3
+TRAIN_GAIN_MAX = 6
+TRAIN_PERFECT_CHANCE = 0.1
+TRAIN_PERFECT_BONUS = 3
+PERFORM_COOLDOWN_SECONDS = 4 * 60 * 60
+PERFORM_BASE_SCORE = 25
+PERFORM_SKILL_WEIGHT = 1.7
+PERFORM_RARITY_MULTIPLIERS = {
+    "Common": 1.0,
+    "Rare": 1.08,
+    "Epic": 1.2,
+    "Legendary": 1.35,
+    "Mythic": 1.55,
+}
+PERFORM_GRADE_MULTIPLIERS = {
+    "C": 1.0,
+    "B": 1.08,
+    "A": 1.18,
+    "S": 1.3,
+}
 MINIGAMES = (
     (
         "tripleS Trivia",
