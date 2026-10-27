@@ -284,6 +284,8 @@ async def cooldown(ctx):
         'weekly': '🗓️ Weekly',
         'drop': '🎴 Drop',
         'spin': '🎰 Spin',
+        'train': 'Train',
+        'perform': 'Perform',
         'claim': '🙋 Claim',
         'trivia': '🧠 Trivia',
     }
@@ -389,6 +391,8 @@ async def cooldown(ctx):
         "weekly": "DM me when my weekly cooldown resets.",
         "drop": "DM me when my drop cooldown resets.",
         "spin": "DM me when my spin cooldown resets.",
+        "train": "DM me when my training cooldown resets.",
+        "perform": "DM me when my performance cooldown resets.",
         "claim": "DM me when I can claim a card again.",
         "trivia": "DM me when I can play trivia again.",
     },
@@ -399,6 +403,8 @@ async def cooldown_reminders(
     weekly: bool = None,
     drop: bool = None,
     spin: bool = None,
+    train: bool = None,
+    perform: bool = None,
     claim: bool = None,
     trivia: bool = None,
 ):
@@ -409,6 +415,8 @@ async def cooldown_reminders(
         "weekly": weekly,
         "drop": drop,
         "spin": spin,
+        "train": train,
+        "perform": perform,
         "claim": claim,
         "trivia": trivia,
     }

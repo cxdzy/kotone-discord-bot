@@ -29,6 +29,7 @@ from kotone.db import (
 )
 from kotone.game import (
     MERGE_UPGRADES,
+    ensure_card_skill,
     format_target,
     generate_unique_cards,
     get_merge_selection,
@@ -1210,6 +1211,10 @@ async def view_card(ctx, serial: str):
 
         member_code, era, rarity, owner_id, obtained_at = card
 
+        with get_db() as conn:
+            c = conn.cursor()
+            skills = ensure_card_skill(c, serial, member_code, rarity)
+
         # Get owner username
         with get_db() as conn:
             c = conn.cursor()
@@ -1260,6 +1265,26 @@ async def view_card(ctx, serial: str):
             name="Obtained",
             value=obtained_at[:10] if obtained_at else "Unknown",
             inline=True
+        )
+        embed.add_field(
+            name="Skill",
+            value=f"**{skills['skill']}**",
+            inline=True,
+        )
+        embed.add_field(
+            name="Skill Points",
+            value=f"**{skills['points']}** / {skills['cap']}",
+            inline=True,
+        )
+        embed.add_field(
+            name="Training Sessions",
+            value=f"**{skills['training_sessions']}**",
+            inline=True,
+        )
+        embed.add_field(
+            name="Performances",
+            value=f"**{skills['performances']}**",
+            inline=True,
         )
 
         # Set color based on rarity

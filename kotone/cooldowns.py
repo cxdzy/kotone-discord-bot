@@ -18,6 +18,8 @@ COOLDOWN_REMINDER_TYPES = {
     "weekly": ("Weekly", "/weekly"),
     "drop": ("Drop", "/drop"),
     "spin": ("Spin", "/spin serial"),
+    "train": ("Training", "/train serial"),
+    "perform": ("Perform", "/perform serial"),
     "claim": ("Claim", None),
     "trivia": ("Trivia", "/trivia"),
 }

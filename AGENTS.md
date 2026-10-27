@@ -4,7 +4,7 @@ Guide for AI coding assistants working on this repo. Read this first and open on
 
 ## What this is
 
-A Discord bot (Python, discord.py 2.7.1) for a tripleS card collecting game. Players drop, merge, trade and view cards with slash commands. Data lives in SQLite (`kpop_cards.db`). The bot runs in Docker on a server and on a developer's Windows PC.
+A Discord bot (Python, discord.py 2.7.1) for a tripleS card collecting game. Players drop, merge, trade, train and perform cards with slash commands. Data lives in SQLite (`kpop_cards.db`). The bot runs in Docker on a server and on a developer's Windows PC.
 
 - Libraries are pinned in `requirements.txt` (discord.py 2.7.1, Pillow 12.3.0, python-dotenv 1.2.4).
 - Local Python is 3.10, the server runs 3.12. Write code that works on both.
@@ -24,7 +24,7 @@ A Discord bot (Python, discord.py 2.7.1) for a tripleS card collecting game. Pla
 | `kotone/images.py` | Card images, collages, drop embeds |
 | `kotone/views.py` | Buttons, menus, help, and the collection embed builders (large file, open only if the task is about views) |
 | `kotone/events.py` | `on_ready`, `on_message`, error handler |
-| `features/*.py` | Slash commands: binder, cards, economy, market, trivia, fun_utility |
+| `features/*.py` | Slash commands: binder, cards, economy, market, training, trivia, fun_utility |
 | `features/__init__.py` | Imports every features file. It sets the command registration order. |
 | `eras.py` | Card data and image links (large data file, search it, do not read it whole) |
 | `triples_trivia.json` | Trivia questions |
@@ -48,7 +48,7 @@ A Discord bot (Python, discord.py 2.7.1) for a tripleS card collecting game. Pla
 
 - Use explicit imports. Never use `from x import *`.
 - Imports flow one way. `client`, `config`, `db` and `images` import nothing else from `kotone/`. `cooldowns` uses `client` and `db`. `shop` uses `cooldowns` and `db`. `game` uses `config`, `cooldowns`, `db` and `shop`. `views` uses `client`, `config`, `cooldowns`, `db`, `game` and `images`. `events` uses `client`, `cooldowns` and `db`. Nothing in `kotone/` may import `bot` or `features`.
-- Commands are registered with the `slash_command` decorator from `kotone/client.py`. Each alias is a separate top-level command, and the binder group counts once (its subcommands do not). The bot has 48 commands today, and CI fails if the count drops.
+- Commands are registered with the `slash_command` decorator from `kotone/client.py`. Each alias is a separate top-level command, and the binder group counts once (its subcommands do not). The bot has 50 commands today, and CI fails if the count drops.
 - Shared state: there is one client (`bot` in `kotone/client.py`) and two shared registries (`SLASH_COMMANDS`, `SLASH_COMMAND_ALIASES`). `features/binder.py` adds its group to `SLASH_COMMANDS` by hand. The reminder loop starts in `on_ready` (`kotone/events.py`).
 - Keep `load_dotenv()` in `bot.py`. It searches for `.env` starting from the folder of the file that calls it.
 - Keep the existing line endings (CRLF) and style. Do not reformat or reorder code you were not asked to change.
@@ -75,7 +75,7 @@ A Discord bot (Python, discord.py 2.7.1) for a tripleS card collecting game. Pla
 
 1. Create `.env` with `DISCORD_TOKEN=` set to a test bot token. Never use the live token.
 2. `python -m pip install -r requirements.txt`
-3. Start with `Start Bot.bat` or `python bot.py`. It should print "Synced 48 slash commands".
+3. Start with `Start Bot.bat` or `python bot.py`. It should print "Synced 50 slash commands".
 4. Check changed `.py` files with `python -m py_compile <file>`.
 
 ## Git rules
