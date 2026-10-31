@@ -1,7 +1,9 @@
 import asyncio
 import inspect
+import math
 import os
 import signal
+import time
 from types import SimpleNamespace
 import discord
 from discord import app_commands
@@ -12,6 +14,17 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 
+def format_uptime(seconds):
+    seconds = max(0, int(seconds))
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m"
+    return f"{seconds}s"
+
+
 class KotoneBot(discord.Client):
     def __init__(self):
         super().__init__(intents=intents)
@@ -19,6 +32,7 @@ class KotoneBot(discord.Client):
         self.status_channel_id = None
         self.status_channel_checked = False
         self.offline_status_sent = False
+        self.status_start_time = None
         self.sigterm_task = None
 
     async def setup_hook(self):
@@ -50,13 +64,47 @@ class KotoneBot(discord.Client):
                 print("STATUS_CHANNEL_ID is not set. Status messages are off.")
         return self.status_channel_id
 
-    async def send_status(self, text):
+    STATUS_GIF_URL = "https://media1.tenor.com/m/uA3tTl_GsTgAAAAd/triples-kotone.gif"
+
+    def build_status_embed(self, status):
+        if status == "Online":
+            embed = discord.Embed(
+                title="Online",
+                color=0x2ECC71,
+                timestamp=discord.utils.utcnow(),
+            )
+            latency = self.latency * 1000
+            embed.add_field(name="Servers", value=str(len(self.guilds)))
+            embed.add_field(
+                name="Commands",
+                value=str(len(self.tree.get_commands())),
+            )
+            embed.add_field(
+                name="Latency",
+                value=f"{round(latency)} ms" if math.isfinite(latency) else "n/a",
+            )
+            embed.set_thumbnail(url=self.STATUS_GIF_URL)
+        else:
+            embed = discord.Embed(
+                title="Offline",
+                color=0xE74C3C,
+                timestamp=discord.utils.utcnow(),
+            )
+            if self.status_start_time is not None:
+                embed.add_field(
+                    name="Uptime",
+                    value=format_uptime(time.monotonic() - self.status_start_time),
+                )
+        return embed
+
+    async def send_status(self, status):
         channel_id = self.get_status_channel_id()
         if channel_id is None:
             return
         try:
+            embed = self.build_status_embed(status)
             channel = self.get_partial_messageable(channel_id)
-            await asyncio.wait_for(channel.send(text), timeout=5)
+            await asyncio.wait_for(channel.send(embed=embed), timeout=5)
         except Exception as error:
             print(f"Could not post status message: {error!r}")
 

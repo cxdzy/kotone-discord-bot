@@ -38,6 +38,8 @@ async def on_ready():
     if not online_status_sent:
         online_status_sent = True
         await bot.send_status("Online")
+        # Uptime in the "Offline" message counts from here.
+        bot.status_start_time = time.monotonic()
 
 
 def format_afk_duration(elapsed_seconds):
