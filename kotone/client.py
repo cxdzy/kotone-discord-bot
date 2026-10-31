@@ -1,4 +1,7 @@
+import asyncio
 import inspect
+import os
+import signal
 from types import SimpleNamespace
 import discord
 from discord import app_commands
@@ -13,10 +16,61 @@ class KotoneBot(discord.Client):
     def __init__(self):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
+        self.status_channel_id = None
+        self.status_channel_checked = False
+        self.offline_status_sent = False
+        self.sigterm_task = None
 
     async def setup_hook(self):
+        # Docker stops the bot with SIGTERM. Close cleanly so "Offline" is posted.
+        # Windows event loops do not support signal handlers.
+        try:
+            asyncio.get_running_loop().add_signal_handler(
+                signal.SIGTERM,
+                self.handle_sigterm,
+            )
+        except (NotImplementedError, RuntimeError):
+            pass
         await self.tree.sync()
         print(f"Synced {len(self.tree.get_commands())} slash commands")
+
+    def handle_sigterm(self):
+        if self.sigterm_task is None:
+            self.sigterm_task = asyncio.create_task(self.close())
+
+    def get_status_channel_id(self):
+        if not self.status_channel_checked:
+            self.status_channel_checked = True
+            value = os.getenv("STATUS_CHANNEL_ID", "").strip()
+            if value.isascii() and value.isdigit() and int(value) > 0:
+                self.status_channel_id = int(value)
+            elif value:
+                print("STATUS_CHANNEL_ID is not a valid channel ID. Status messages are off.")
+            else:
+                print("STATUS_CHANNEL_ID is not set. Status messages are off.")
+        return self.status_channel_id
+
+    async def send_status(self, text):
+        channel_id = self.get_status_channel_id()
+        if channel_id is None:
+            return
+        try:
+            channel = self.get_partial_messageable(channel_id)
+            await asyncio.wait_for(channel.send(text), timeout=5)
+        except Exception as error:
+            print(f"Could not post status message: {error!r}")
+
+    async def close(self):
+        try:
+            if (
+                not self.offline_status_sent
+                and self.is_ready()
+                and not self.is_closed()
+            ):
+                self.offline_status_sent = True
+                await self.send_status("Offline")
+        finally:
+            await super().close()
 
 bot = KotoneBot()
 SLASH_COMMANDS = {}
