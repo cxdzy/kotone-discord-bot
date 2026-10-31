@@ -15,7 +15,7 @@ A Discord bot (Python, discord.py 2.7.1) for a tripleS card collecting game. Pla
 | Path | What is in it |
 |---|---|
 | `bot.py` | Short entry file (about 55 lines). Loads `.env`, imports `kotone.client`, `kotone.events` and `features`, then runs the bot. Also holds the Windows single-instance lock. Do not add logic here. |
-| `kotone/client.py` | Bot client (`bot`), `slash_command` decorator, command registries, status messages (`send_status`, "Offline" in `close()`, SIGTERM handler) |
+| `kotone/client.py` | Bot client (`bot`), `slash_command` decorator, command registries, status embeds (`build_status_embed`, `send_status`, "Offline" in `close()`, SIGTERM handler) |
 | `kotone/config.py` | Shared constants: rarities, spin limits, member lists, minigames |
 | `kotone/db.py` | `get_db`, `init_db` and the table migrations |
 | `kotone/cooldowns.py` | Cooldowns and the reminder loop |
