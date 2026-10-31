@@ -8,14 +8,14 @@ A Discord bot (Python, discord.py 2.7.1) for a tripleS card collecting game. Pla
 
 - Libraries are pinned in `requirements.txt` (discord.py 2.7.1, Pillow 12.3.0, python-dotenv 1.2.4).
 - Local Python is 3.10, the server runs 3.12. Write code that works on both.
-- The only environment variable the code reads is `DISCORD_TOKEN` (in `bot.py`). Locally it comes from `.env`. On the server `compose.yml` passes it with `env_file`.
+- The code reads two environment variables: `DISCORD_TOKEN` (required, in `bot.py`) and `STATUS_CHANNEL_ID` (optional, in `kotone/client.py`, the channel for "Online" and "Offline" messages; unset or invalid turns them off). Locally they come from `.env`. On the server `compose.yml` passes them with `env_file`.
 
 ## Layout
 
 | Path | What is in it |
 |---|---|
 | `bot.py` | Short entry file (about 55 lines). Loads `.env`, imports `kotone.client`, `kotone.events` and `features`, then runs the bot. Also holds the Windows single-instance lock. Do not add logic here. |
-| `kotone/client.py` | Bot client (`bot`), `slash_command` decorator, command registries |
+| `kotone/client.py` | Bot client (`bot`), `slash_command` decorator, command registries, status messages (`send_status`, "Offline" in `close()`, SIGTERM handler) |
 | `kotone/config.py` | Shared constants: rarities, spin limits, member lists, minigames |
 | `kotone/db.py` | `get_db`, `init_db` and the table migrations |
 | `kotone/cooldowns.py` | Cooldowns and the reminder loop |
@@ -23,12 +23,12 @@ A Discord bot (Python, discord.py 2.7.1) for a tripleS card collecting game. Pla
 | `kotone/game.py` | Card generation, spin, merge, targets |
 | `kotone/images.py` | Card images, collages, drop embeds |
 | `kotone/views.py` | Buttons, menus, help, and the collection embed builders (large file, open only if the task is about views) |
-| `kotone/events.py` | `on_ready`, `on_message`, error handler |
+| `kotone/events.py` | `on_ready` (posts "Online" once per process), `on_message`, error handler |
 | `features/*.py` | Slash commands: binder, cards, economy, market, training, trivia, fun_utility |
 | `features/__init__.py` | Imports every features file. It sets the command registration order. |
 | `eras.py` | Card data and image links (large data file, search it, do not read it whole) |
 | `triples_trivia.json` | Trivia questions |
-| `Start Bot.bat`, `.env.example` | Windows start script, and the list of required environment variable names |
+| `Start Bot.bat`, `.env.example` | Windows start script, and the list of environment variable names |
 | `ci/smoke_test.py`, `.github/workflows/ci.yml` | CI checks |
 | `Dockerfile`, `compose.yml`, `.dockerignore` | Server hosting. Do not change without asking. |
 
@@ -66,10 +66,10 @@ A Discord bot (Python, discord.py 2.7.1) for a tripleS card collecting game. Pla
 
 ## Images
 
-- Card images must be hosted on the project's Supabase bucket (`kotone bot`).
+- Card images must be hosted on the project's Cloudflare R2 bucket (`pub-6b36c51f5c9a4d9c884ee896543879d9.r2.dev`).
 - Never use `file:///`, `C:\`, `example.com`, or Discord links (`cdn.discordapp.com`, `media.discordapp.net`). Discord links expire.
 - `get_card_image` ignores `example.com` placeholders for animated images. Do not remove that check.
-- Existing data does not follow these rules yet. `eras.py` still has 65 expired Discord links and 61 `example.com` placeholders (at the time of writing), and `get_card_image` falls back to an `example.com` URL for unknown cards. `kotone/events.py` also has hard-coded Discord, Tenor and Klipy links. Replace links when you touch a card. Do not copy them.
+- Existing data does not follow these rules yet. `eras.py` still has some expired Discord links and `example.com` placeholders, and `get_card_image` falls back to an `example.com` URL for unknown cards. `kotone/events.py` also has hard-coded Discord, Tenor and Klipy links. Replace links when you touch a card. Do not copy them.
 
 ## Run and test locally
 

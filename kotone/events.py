@@ -13,9 +13,13 @@ from kotone.db import (
     get_db,
 )
 
+# on_ready runs again after every reconnect, so "Online" is posted only once.
+online_status_sent = False
+
 
 @bot.event
 async def on_ready():
+    global online_status_sent
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guilds')
     await bot.change_presence(
@@ -31,6 +35,9 @@ async def on_ready():
     )
     if not cooldown_reminder_loop.is_running():
         cooldown_reminder_loop.start()
+    if not online_status_sent:
+        online_status_sent = True
+        await bot.send_status("Online")
 
 
 def format_afk_duration(elapsed_seconds):
